@@ -75,10 +75,20 @@ CONCEPTS: dict[str, list[tuple[str, str]]] = {
         ("us-gaap", "AvailableForSaleSecuritiesCurrent"),
         ("ifrs-full", "CurrentInvestments"),
     ],
+    # ניירות ערך סחירים – סה"כ (שוטף + לא שוטף). חברות רבות מחזיקות חלק מהקופה באג"ח לטווח של שנה-שנתיים.
+    "securities_total": [
+        ("us-gaap", "DebtSecuritiesAvailableForSaleExcludingAccruedInterest"),
+        ("us-gaap", "AvailableForSaleSecuritiesDebtSecurities"),
+        ("us-gaap", "MarketableSecurities"),
+    ],
+    "lt_securities": [
+        ("us-gaap", "MarketableSecuritiesNoncurrent"),
+        ("us-gaap", "AvailableForSaleSecuritiesDebtSecuritiesNoncurrent"),
+        ("us-gaap", "HeldToMaturitySecuritiesNoncurrent"),
+    ],
     # חוב: מנסים קודם סך חוב, אחרת מחברים לטווח ארוך + שוטף
     "debt_total": [
         ("us-gaap", "LongTermDebt"),
-        ("us-gaap", "DebtInstrumentCarryingAmount"),
         ("us-gaap", "LongTermDebtAndCapitalLeaseObligationsIncludingCurrentMaturities"),
         ("us-gaap", "DebtLongtermAndShorttermCombinedAmount"),
         ("ifrs-full", "Borrowings"),
@@ -112,7 +122,39 @@ CONCEPTS: dict[str, list[tuple[str, str]]] = {
 }
 
 FLOW_ITEMS = ["revenue", "net_income", "op_income", "ocf", "capex", "sbc"]
-INSTANT_ITEMS = ["cash", "st_investments", "debt_total", "debt_noncurrent", "debt_current", "shares"]
+INSTANT_ITEMS = ["cash", "st_investments", "securities_total", "lt_securities",
+                 "debt_total", "debt_noncurrent", "debt_current", "shares"]
+
+# חברת SPAC (חברת מעטפת שמיזגה אליה את החברה האמיתית): הדוחות שלפני המיזוג שייכים למעטפת
+TRUST_CONCEPTS = ["AssetsHeldInTrustNoncurrent", "AssetsHeldInTrustCurrent", "AssetsHeldInTrust"]
+
+
+def spac_cutoff(facts: dict):
+    """אם החברה דיווחה בעבר על נכסים בנאמנות (חשבון ה-SPAC) – מחזיר את מועד ההגשה האחרון של המעטפת."""
+    last = None
+    gaap = facts.get("facts", {}).get("us-gaap", {})
+    for c in TRUST_CONCEPTS:
+        for rows in (gaap.get(c, {}).get("units") or {}).values():
+            for r in rows:
+                if (r.get("val") or 0) > 0 and r.get("filed"):
+                    f = pd.Timestamp(r["filed"])
+                    last = f if last is None or f > last else last
+    return last
+
+
+def _drop_filed_before(facts: dict, cutoff) -> dict:
+    """עותק של facts בלי דיווחים שהוגשו עד המועד (כולל) – כלומר בלי הדוחות של המעטפת."""
+    cut = cutoff.strftime("%Y-%m-%d")
+    out = {k: v for k, v in facts.items() if k != "facts"}
+    out["facts"] = {}
+    for ns, concepts in facts.get("facts", {}).items():
+        out["facts"][ns] = {}
+        for c, node in concepts.items():
+            units = {u: [r for r in rows if (r.get("filed") or "") > cut] for u, rows in (node.get("units") or {}).items()}
+            units = {u: rows for u, rows in units.items() if rows}
+            if units:
+                out["facts"][ns][c] = {**{k: v for k, v in node.items() if k != "units"}, "units": units}
+    return out
 
 
 class SecError(Exception):
@@ -313,6 +355,7 @@ class CompanyData:
     balance: pd.DataFrame            # index=תאריך; עמודות: cash, st_investments, debt, shares
     currency: str = "USD"
     period_months: int = 3           # 3 = רבעוני, 12 = שנתי בלבד (חברות זרות)
+    spac_cutoff: object = None       # מועד ההגשה האחרון של חברת ה-SPAC (אם רלוונטי)
     concepts_used: dict = field(default_factory=dict)
     prices: pd.Series | None = None  # מחיר סגירה יומי
     market_cap: float | None = None
@@ -322,6 +365,13 @@ class CompanyData:
 
 def build_company_data(facts: dict, ticker: str, name: str, cik: int) -> CompanyData:
     warnings: list[str] = []
+    cutoff = spac_cutoff(facts)
+    if cutoff is not None:
+        facts = _drop_filed_before(facts, cutoff)
+        warnings.append(
+            f"החברה נכנסה לבורסה דרך מיזוג עם חברת SPAC (בערך ב-{cutoff.strftime('%m/%Y')}). "
+            "הדוחות של חברת המעטפת שלפני המיזוג לא נכללים באבחון, וגם מחירי המניה מלפני המיזוג לא מוצגים."
+        )
     used: dict[str, str] = {}
     currency = "USD"
 
@@ -414,7 +464,7 @@ def build_company_data(facts: dict, ticker: str, name: str, cik: int) -> Company
 
     return CompanyData(
         ticker=ticker, name=name, cik=cik, quarterly=q, balance=b,
-        currency=currency, period_months=period_months, concepts_used=used, warnings=warnings,
+        currency=currency, period_months=period_months, spac_cutoff=cutoff, concepts_used=used, warnings=warnings,
     )
 
 
@@ -459,6 +509,8 @@ def load_company(ticker: str, user_agent: str = DEFAULT_UA, ticker_map: dict | N
     facts = fetch_company_facts(info["cik"], user_agent)
     data = build_company_data(facts, ticker, facts.get("entityName") or info["name"], info["cik"])
     prices, last, mcap = fetch_prices(ticker)
+    if prices is not None and data.spac_cutoff is not None:
+        prices = prices[prices.index > data.spac_cutoff]
     data.prices, data.last_price = prices, last
     if mcap is None and last is not None and "shares" in data.balance and data.balance["shares"].notna().any():
         mcap = last * float(data.balance["shares"].dropna().iloc[-1])

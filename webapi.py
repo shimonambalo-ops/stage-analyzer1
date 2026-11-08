@@ -106,6 +106,8 @@ def analyze(ticker: str) -> dict:
     nice = " ".join(w if any(ch.islower() for ch in w) else w.capitalize() for w in raw_name.split()) if raw_name.isupper() else raw_name
     data = sec_data.build_company_data(facts, ticker, nice, info["cik"])
     prices, last, mcap = _cached(("px", ticker), 3 * 3600, lambda: sec_data.fetch_prices(ticker))
+    if prices is not None and data.spac_cutoff is not None:
+        prices = prices[prices.index > data.spac_cutoff]  # מחירי חברת המעטפת (~10$) לא רלוונטיים
     data.prices, data.last_price = prices, last
     if mcap is None and last is not None and "shares" in data.balance and data.balance["shares"].notna().any():
         mcap = last * float(data.balance["shares"].dropna().iloc[-1])

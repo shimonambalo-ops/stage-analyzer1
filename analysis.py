@@ -127,7 +127,7 @@ def _value_year_ago(s: pd.Series, when: pd.Timestamp, tol_days: int = 25):
     return s.iloc[k] if diffs[k] <= tol_days else np.nan
 
 
-def _asof(s: pd.Series | None, when: pd.Timestamp, slack_days: int = 15, max_age_days: int = 400):
+def _asof(s: pd.Series | None, when: pd.Timestamp, slack_days: int = 15, max_age_days: int = 200):
     """הערך המאזני האחרון עד התאריך – רק אם הוא לא ישן מדי."""
     if s is None:
         return np.nan
@@ -187,11 +187,14 @@ def compute_metrics(quarterly: pd.DataFrame, balance: pd.DataFrame, period_month
     m["ni_core_ttm"] = m["net_income_ttm"].where(~m["non_operating_profit"], op)
 
     b = balance.copy().sort_index() if balance is not None else pd.DataFrame()
-    for col in ["cash", "st_investments", "debt", "shares"]:
+    for col in ["cash", "st_investments", "securities_total", "lt_securities", "debt", "shares"]:
         series = b[col] if col in b else None
         m[col] = [_asof(series, t) for t in m.index]
-    m["liquid"] = m["cash"].fillna(0) + m["st_investments"].fillna(0)
-    m.loc[m["cash"].isna() & m["st_investments"].isna(), "liquid"] = np.nan
+    # קופה = מזומן + ניירות ערך סחירים. אם יש סה"כ ניירות ערך (שוטף + לא שוטף) – לוקחים את הגדול מבין החישובים
+    by_parts = m["cash"].fillna(0) + m["st_investments"].fillna(0) + m["lt_securities"].fillna(0)
+    by_total = m["cash"].fillna(0) + m["securities_total"].fillna(0)
+    m["liquid"] = np.maximum(by_parts, by_total)
+    m.loc[m[["cash", "st_investments", "securities_total", "lt_securities"]].isna().all(axis=1), "liquid"] = np.nan
     return m
 
 
