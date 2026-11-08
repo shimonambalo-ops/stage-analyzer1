@@ -116,7 +116,7 @@ def analyze(ticker: str) -> dict:
     if key not in tm:
         return {"error": f"הטיקר {ticker} לא נמצא ברשימת ה-SEC. הכלי תומך בחברות שמגישות דוחות ל-SEC (נסחרות בארה\"ב)."}
     info = tm[key]
-    facts = _cached(("facts", info["cik"]), 6 * 3600, lambda: sec_data.fetch_company_facts(info["cik"], UA))
+    facts = _cached(("facts", info["cik"]), 3600, lambda: sec_data.fetch_company_facts(info["cik"], UA))
     raw_name = facts.get("entityName") or info["name"]
     nice = " ".join(w if any(ch.islower() for ch in w) else w.capitalize() for w in raw_name.split()) if raw_name.isupper() else raw_name
     data = sec_data.build_company_data(facts, ticker, nice, info["cik"])
@@ -235,3 +235,38 @@ def extras(ticker: str, cik: int = 0, name: str = "") -> dict:
         "news": news,
         "filings": fil,
     })
+
+
+def audit(ticker: str, n: int = 6) -> dict:
+    """בדיקת נתונים: ערכים גולמיים לכל שדה ברבעונים האחרונים + מאיזה דוח הם נלקחו, מול רשימת הדוחות ב-SEC."""
+    ticker = ticker.strip().upper()
+    tm = ticker_map()
+    key = ticker if ticker in tm else ticker.replace(".", "-")
+    if key not in tm:
+        return {"error": "not found"}
+    info = tm[key]
+    facts = sec_data.fetch_company_facts(info["cik"], UA)  # בלי cache – תמיד הנתונים העדכניים
+    data = sec_data.build_company_data(facts, ticker, info["name"], info["cik"])
+    items = {}
+    for col in data.quarterly.columns:
+        if col == "filed":
+            continue
+        s = data.quarterly[col].dropna().tail(n)
+        p = data.provenance.get(col)
+        items[col] = {"concept": data.concepts_used.get(col), "rows": [
+            [d, float(v)] + ([p.at[d, "form"], p.at[d, "src_filed"]] if p is not None and d in p.index else [])
+            for d, v in s.items()]}
+    for col in data.balance.columns:
+        s = data.balance[col].dropna().tail(n)
+        p = data.provenance.get(col)
+        items["bal:" + col] = {"concept": data.concepts_used.get(col), "rows": [
+            [d, float(v)] + ([p.at[d, "form"], p.at[d, "src_filed"]] if p is not None and d in p.index else [])
+            for d, v in s.items()]}
+    sub = profile_data.fetch_submissions(info["cik"], UA) or {}
+    r = (sub.get("filings") or {}).get("recent") or {}
+    filings = [[f, rd, fd] for f, rd, fd in zip(r.get("form", []), r.get("reportDate", []), r.get("filingDate", []))
+               if f in ("10-Q", "10-K", "10-Q/A", "10-K/A", "20-F", "40-F")][:6]
+    dg = analysis.diagnose(data)
+    return clean({"ticker": ticker, "facts_last_filed": max((p["src_filed"].max() for p in data.provenance.values() if len(p)), default=None),
+                  "sec_filings": filings, "latest": dg.latest.get("quarter_end"), "items": items,
+                  "checks": verify.checks(data, dg)})

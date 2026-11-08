@@ -34,9 +34,11 @@ def _json(start_response, status, body, cache):
 def _api(path, q):
     t = (q.get("t") or "").strip()
     if path == "/api/analyze":
-        return (webapi.analyze(t) if t else {"error": "חסר טיקר"}), 6 * 3600
+        return (webapi.analyze(t) if t else {"error": "חסר טיקר"}), 3600
     if path == "/api/extras":
         return (webapi.extras(t, int(q.get("cik") or 0), q.get("name", "")) if t else {"error": "חסר טיקר"}), 1800
+    if path == "/api/audit":
+        return (webapi.audit(t) if t else {"error": "חסר טיקר"}), 0
     if path == "/api/tickers":
         return {"tickers": webapi.tickers_list()}, 86400
     return {"error": "נתיב לא קיים"}, 600
@@ -72,7 +74,7 @@ def app(environ, start_response):
             body, ttl = _api(path, q)
             if isinstance(body, dict) and body.get("error"):
                 return _json(start_response, "404 Not Found", body, "public, s-maxage=600")
-            return _json(start_response, "200 OK", body, f"public, s-maxage={ttl}, stale-while-revalidate=86400")
+            return _json(start_response, "200 OK", body, f"public, s-maxage={ttl}, stale-while-revalidate=600")
         except Exception as e:  # noqa: BLE001
             traceback.print_exc()
             return _json(start_response, "502 Bad Gateway", {"error": f"שגיאה בטעינת הנתונים: {e}"}, "no-store")
