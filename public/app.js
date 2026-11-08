@@ -15,11 +15,11 @@
   const EXPLAIN = {
     mcap: 'שווי כל המניות של החברה בשוק: מחיר המניה כפול מספר המניות.',
     pe: 'מחיר המניה חלקי הרווח למניה ב-12 החודשים האחרונים – כמה שנות רווח משלמים על המניה. אין לו משמעות כשהחברה מפסידה.',
-    fpe: 'כמו מכפיל רווח, אבל לפי תחזית הרווח של האנליסטים לשנה הקרובה.',
+    fpe: 'כמו מכפיל רווח, אבל לפי תחזית הרווח של האנליסטים לשנה הקרובה. כשהתחזית היא הפסד – המכפיל שלילי ואין לו משמעות של "זול".',
     ps: 'שווי השוק חלקי ההכנסות השנתיות. שימושי במיוחד בחברות צמיחה שעדיין מפסידות.',
     pfcf: 'שווי השוק חלקי התזרים החופשי השנתי – כמה שנים של מזומן פנוי משלמים על החברה.',
     pb: 'שווי השוק חלקי ההון העצמי בספרים.',
-    eps: 'הרווח הנקי השנתי חלקי מספר המניות.',
+    eps: 'הרווח הנקי ב-12 החודשים האחרונים חלקי מספר המניות הממוצע המדולל (כמו בדוחות).',
     div: 'הדיבידנד השנתי כאחוז ממחיר המניה.',
     rev: 'סך ההכנסות ב-12 החודשים האחרונים (4 רבעונים), והשינוי לעומת 12 החודשים שלפניהם.',
     ni: 'מה שנשאר מההכנסות אחרי כל ההוצאות, הריבית והמיסים, ב-12 החודשים האחרונים.',
@@ -46,7 +46,7 @@
     if (v === null || v === undefined || Number.isNaN(v)) return '';
     const V = (t, c) => `<span class="verdict ${c}">${t}</span>`;
     switch (kind) {
-      case 'pe': return v < 15 ? V('זול', 'g') : v < 25 ? V('סביר', 'n') : v < 40 ? V('יקר', 'a') : V('יקר מאוד', 'r');
+      case 'pe': return v <= 0 ? V('הפסד צפוי', 'r') : v < 15 ? V('זול', 'g') : v < 25 ? V('סביר', 'n') : v < 40 ? V('יקר', 'a') : V('יקר מאוד', 'r');
       case 'ps': return v < 2 ? V('זול', 'g') : v < 6 ? V('סביר', 'n') : v < 15 ? V('יקר', 'a') : V('יקר מאוד', 'r');
       case 'pfcf': return v < 15 ? V('זול', 'g') : v < 30 ? V('סביר', 'n') : v < 60 ? V('יקר', 'a') : V('יקר מאוד', 'r');
       case 'dil': return v > 0.08 ? V('דילול כבד', 'r') : v > 0.03 ? V('דילול', 'a') : v < -0.01 ? V('רכישה עצמית', 'g') : V('יציב', 'n');
@@ -552,11 +552,11 @@
     const valuation = [
       kv('שווי שוק', money(A.market_cap), 'mcap'),
       kv('מכפיל רווח (P/E)', bad(L.pe) ? 'אין רווח' : num(L.pe), 'pe', verdict('pe', L.pe)),
-      kv('מכפיל רווח עתידי', ys(num(S.forwardPE)), 'fpe', loading ? '' : verdict('pe', S.forwardPE)),
+      kv('מכפיל רווח עתידי', ys(bad(S.forwardPE) ? '—' : S.forwardPE <= 0 ? 'צפוי הפסד' : num(S.forwardPE)), 'fpe', loading || bad(S.forwardPE) || S.forwardPE <= 0 ? '' : verdict('pe', S.forwardPE)),
       kv('מכפיל מכירות (P/S)', num(L.ps), 'ps', verdict('ps', L.ps)),
       kv('מכפיל תזרים (P/FCF)', num(L.pfcf), 'pfcf', verdict('pfcf', L.pfcf)),
       kv('מכפיל הון (P/B)', ys(num(S.priceToBook)), 'pb'),
-      kv('רווח למניה (EPS)', ys(bad(S.trailingEps) ? '—' : n((S.trailingEps < 0 ? '-$' : '$') + Math.abs(S.trailingEps).toFixed(2))), 'eps'),
+      kv('רווח למניה (EPS)', (() => { const e = !bad(L.eps_ttm) ? L.eps_ttm : S.trailingEps; return bad(e) ? ys('—') : n((e < 0 ? '-$' : '$') + Math.abs(e).toFixed(2)); })(), 'eps'),
       kv('תשואת דיבידנד', ys(bad(S.dividendYield) || !S.dividendYield ? 'אין' : pct(S.dividendYield, false)), 'div'),
     ].join('');
     const health = [
@@ -843,6 +843,11 @@
     };
     cmp('הכנסות 12 חודשים', L.revenue_ttm, S.totalRevenue, 0.03, 0.10);
     cmp('רווח נקי 12 חודשים', L.net_income_ttm, S.netIncomeToCommon, 0.05, 0.15, '', Math.abs(L.revenue_ttm || 0) * 0.05);
+    if (!bad(L.pe) && !bad(S.trailingPE) && S.trailingPE > 0) {
+      const d = Math.abs(L.pe - S.trailingPE) / Math.max(L.pe, S.trailingPE);
+      rows.push({ id: 'x-pe', title: 'מכפיל רווח: תואם ל-Yahoo Finance', status: d <= 0.05 ? 'ok' : d <= 0.15 ? 'warn' : 'info',
+        detail: `אצלנו: ${num(L.pe)}, Yahoo: ${num(S.trailingPE)} (פער ${(d * 100).toFixed(1)}%). הבדל קטן נובע ממועד המחיר וממועד הדוח האחרון.` });
+    }
     const ourCash = (L.cash || 0) + (L.st_investments || 0);
     if (ourCash) cmp('מזומן והשקעות קצרות', ourCash, S.totalCash, 0.10, 0.25, ' Yahoo לא כולל ניירות ערך לטווח ארוך.');
     if (!bad(L.shares) && !bad(S.sharesOutstanding)) {

@@ -466,6 +466,13 @@ def diagnose(data, cfg: Config | None = None) -> Diagnosis:
     rev_ttm = last.get("revenue_ttm", np.nan)
     ps = mcap / rev_ttm if mcap and rev_ttm and rev_ttm > 0 else np.nan
     pe = mcap / ni_ttm if mcap and not pd.isna(ni_ttm) and ni_ttm > 0 else np.nan
+    # מכפיל רווח לפי ההגדרה המקובלת: מחיר המניה חלקי הרווח למניה (מדולל) ב-12 החודשים האחרונים.
+    # שווי השוק נשען על מספר המניות בעמוד השער, שכולל גם מניות חסומות שטרם הבשילו – ובטסלה זה ניפח את המכפיל בכ-10%.
+    eps_ttm = np.nan
+    if len(avg) and (m.index[li] - avg.index[-1]).days <= 100 and not pd.isna(ni_ttm) and avg.iloc[-1] > 0:
+        eps_ttm = ni_ttm / avg.iloc[-1]
+        if data.currency == "USD" and data.last_price and eps_ttm > 0:
+            pe = data.last_price / eps_ttm
     fcf_ttm = last.get("fcf_ttm", np.nan)
     pfcf = mcap / fcf_ttm if mcap and not pd.isna(fcf_ttm) and fcf_ttm > 0 else np.nan
 
@@ -492,7 +499,7 @@ def diagnose(data, cfg: Config | None = None) -> Diagnosis:
         "liquid": liquid, "debt": debt,
         "shares": shares_now, "dilution_yoy": dilution, "dilution_basis": dilution_basis,
         "cover_shares_yoy": (shares_now / shares_prev - 1) if shares_prev and not pd.isna(shares_prev) and not pd.isna(shares_now) else np.nan,
-        "market_cap": mcap, "ps": ps, "pe": pe, "pfcf": pfcf, "volatility": vol,
+        "market_cap": mcap, "ps": ps, "pe": pe, "pfcf": pfcf, "eps_ttm": eps_ttm, "volatility": vol,
         "last_price": data.last_price,
         "non_operating_profit": bool(last.get("non_operating_profit", False)) if len(m) else False,
         "op_income_ttm": last.get("op_income_ttm", np.nan),
