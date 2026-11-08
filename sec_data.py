@@ -11,7 +11,6 @@ import time
 from dataclasses import dataclass, field
 from datetime import date, timedelta
 
-import numpy as np
 import pandas as pd
 import requests
 
@@ -127,52 +126,6 @@ CONCEPTS: dict[str, list[tuple[str, str]]] = {
         ("dei", "EntityCommonStockSharesOutstanding"),
         ("us-gaap", "CommonStockSharesOutstanding"),
     ],
-    # --- שדות נוספים למנוע השלבים (stage_engine) – שנתיים מדוח 10-K ---
-    "da": [
-        ("us-gaap", "DepreciationDepletionAndAmortization"),
-        ("us-gaap", "DepreciationAmortizationAndAccretionNet"),
-        ("us-gaap", "DepreciationAndAmortization"),
-        ("us-gaap", "Depreciation"),
-        ("us-gaap", "DepreciationAmortizationAndOther"),
-        ("ifrs-full", "DepreciationAndAmortisationExpense"),
-        ("ifrs-full", "DepreciationAmortisationAndImpairmentLossReversalOfImpairmentLossRecognisedInProfitOrLoss"),
-    ],
-    "gross_profit": [("us-gaap", "GrossProfit"), ("ifrs-full", "GrossProfit")],
-    "cost_of_revenue": [
-        ("us-gaap", "CostOfRevenue"),
-        ("us-gaap", "CostOfGoodsAndServicesSold"),
-        ("us-gaap", "CostOfGoodsSold"),
-        ("us-gaap", "CostOfServices"),
-        ("ifrs-full", "CostOfSales"),
-    ],
-    "tax": [
-        ("us-gaap", "IncomeTaxExpenseBenefit"),
-        ("ifrs-full", "IncomeTaxExpenseContinuingOperations"),
-    ],
-    "pretax": [
-        ("us-gaap", "IncomeLossFromContinuingOperationsBeforeIncomeTaxesExtraordinaryItemsNoncontrollingInterest"),
-        ("us-gaap", "IncomeLossFromContinuingOperationsBeforeIncomeTaxesMinorityInterestAndIncomeLossFromEquityMethodInvestments"),
-        ("us-gaap", "IncomeLossFromContinuingOperationsBeforeIncomeTaxesForeign"),
-        ("ifrs-full", "ProfitLossBeforeTax"),
-    ],
-    "dividends": [
-        ("us-gaap", "PaymentsOfDividends"),
-        ("us-gaap", "PaymentsOfDividendsCommonStock"),
-        ("us-gaap", "PaymentsOfOrdinaryDividends"),
-        ("ifrs-full", "DividendsPaidClassifiedAsFinancingActivities"),
-        ("ifrs-full", "DividendsPaid"),
-    ],
-    "buybacks": [
-        ("us-gaap", "PaymentsForRepurchaseOfCommonStock"),
-        ("us-gaap", "PaymentsForRepurchaseOfEquity"),
-        ("ifrs-full", "PaymentsToAcquireOrRedeemEntitysShares"),
-    ],
-    "equity": [
-        ("us-gaap", "StockholdersEquity"),
-        ("us-gaap", "StockholdersEquityIncludingPortionAttributableToNoncontrollingInterest"),
-        ("ifrs-full", "EquityAttributableToOwnersOfParent"),
-        ("ifrs-full", "Equity"),
-    ],
     "shares_diluted_avg": [
         ("us-gaap", "WeightedAverageNumberOfDilutedSharesOutstanding"),
         ("us-gaap", "WeightedAverageNumberOfSharesOutstandingBasic"),
@@ -182,10 +135,7 @@ CONCEPTS: dict[str, list[tuple[str, str]]] = {
 
 FLOW_ITEMS = ["revenue", "net_income", "op_income", "ocf", "cfi", "cff", "capex", "sbc"]
 INSTANT_ITEMS = ["cash", "st_investments", "securities_total", "lt_securities",
-                 "debt_total", "debt_noncurrent", "debt_current", "shares", "assets", "liabilities", "equity"]
-# שנות כספים (מדוח 10-K / 20-F) – בסיס המסלול של Dickinson והמדדים התומכים ב-stage_engine
-FISCAL_ITEMS = FLOW_ITEMS + ["da", "gross_profit", "cost_of_revenue", "tax", "pretax", "dividends", "buybacks",
-                             "shares_diluted_avg"]
+                 "debt_total", "debt_noncurrent", "debt_current", "shares", "assets", "liabilities"]
 
 # חברת SPAC (חברת מעטפת שמיזגה אליה את החברה האמיתית): הדוחות שלפני המיזוג שייכים למעטפת
 TRUST_CONCEPTS = ["AssetsHeldInTrustNoncurrent", "AssetsHeldInTrustCurrent", "AssetsHeldInTrust"]
@@ -444,8 +394,6 @@ class CompanyData:
     spac_cutoff: object = None       # מועד ההגשה האחרון של חברת ה-SPAC (אם רלוונטי)
     provenance: dict = field(default_factory=dict)   # item → DataFrame (index=end; accn, form, src_filed)
     annual: dict = field(default_factory=dict)       # item → סדרה שנתית מדוחות 10-K (לבדיקת עקביות)
-    fiscal: pd.DataFrame = field(default_factory=pd.DataFrame)  # index=סוף שנת כספים; עמודה לכל FISCAL_ITEMS
-    fiscal_prov: dict = field(default_factory=dict)  # item → DataFrame (index=end; accn, form, src_filed)
     concepts_used: dict = field(default_factory=dict)
     prices: pd.Series | None = None  # מחיר סגירה יומי
     market_cap: float | None = None
@@ -562,98 +510,11 @@ def build_company_data(facts: dict, ticker: str, name: str, cik: int) -> Company
             if res_a is not None and used.get(item) == res_a[2]:
                 annual[item] = res_a[0]["val"]
 
-    fiscal, fiscal_prov = build_fiscal(facts, used)
-
     return CompanyData(
-        provenance=prov, annual=annual, fiscal=fiscal, fiscal_prov=fiscal_prov,
+        provenance=prov, annual=annual,
         ticker=ticker, name=name, cik=cik, quarterly=q, balance=b,
         currency=currency, period_months=period_months, spac_cutoff=cutoff, concepts_used=used, warnings=warnings,
     )
-
-
-def _align(s: pd.Series, idx: pd.DatetimeIndex, tol_days: int = 20) -> pd.Series:
-    """מיישר סדרה לתאריכי סוף שנה נתונים (שדות שונים מתוארכים לפעמים בהפרש של ימים)."""
-    out = []
-    s = s.dropna()
-    for d in idx:
-        if not len(s):
-            out.append(np.nan)
-            continue
-        diffs = np.abs((s.index - d).days)
-        k = int(np.argmin(diffs))
-        out.append(float(s.iloc[k]) if diffs[k] <= tol_days else np.nan)
-    return pd.Series(out, index=idx)
-
-
-def _scan_da(facts: dict):
-    """
-    חלופה אחרונה לפחת והפחתות: חברות רבות משתמשות בשדה ייחודי (למשל crwd:DepreciationAndAmortization...).
-    מחפשים בכל מרחבי השמות שדה שמתחיל ב-Depreciation וכולל Amortization, ובוחרים את בעל הכיסוי הטוב והערך הגדול.
-    """
-    for banned in (("accumulated", "deferred", "tax", "impairment", "debt", "financing", "lease"),
-                   ("accumulated", "tax", "debt", "financing")):
-        res = _scan_da_pass(facts, banned)
-        if res is not None:
-            return res
-    return None
-
-
-def _scan_da_pass(facts: dict, banned):
-    best = None
-    for ns, concepts in facts.get("facts", {}).items():
-        for c in concepts:
-            lc = c.lower()
-            if not lc.startswith("depreciation") or "amortization" not in lc:
-                continue
-            if any(w in lc for w in banned):
-                continue
-            df, unit = _facts_df(facts, ns, c)
-            if df.empty or unit != "USD":
-                continue
-            s = _annual_from_duration(df)
-            if s.empty:
-                continue
-            recent = s[s.index >= s.index.max() - pd.Timedelta(days=1500)]
-            key = (s.index.max().to_period("Y"), len(recent), float(recent["val"].abs().mean()))
-            if best is None or key > best[0]:
-                best = (key, s, f"{ns}:{c}")
-    if best is None:
-        return None
-    _, s, name = best
-    return s["val"].astype(float), s[["accn", "form", "src_filed"]], name
-
-
-def build_fiscal(facts: dict, used: dict | None = None):
-    """טבלת שנות כספים: כל שדה זרימה כפי שדווח לשנה מלאה בדוח השנתי."""
-    raw, prov = {}, {}
-    for item in FISCAL_ITEMS:
-        res = _merge_concepts(facts, item, "annual")
-        if res is None:
-            continue
-        s, unit, concept = res
-        if item != "shares_diluted_avg" and unit == "shares":
-            continue
-        raw[item] = s["val"].astype(float)
-        prov[item] = s[["accn", "form", "src_filed"]]
-        if used is not None:
-            used.setdefault(f"fy:{item}", concept)
-    if "da" not in raw:
-        res = _scan_da(facts)
-        if res is not None:
-            raw["da"], prov["da"], name = res
-            if used is not None:
-                used["fy:da"] = name
-    base = [raw[k] for k in ("ocf", "revenue", "net_income") if k in raw]
-    if not base:
-        return pd.DataFrame(), prov
-    # תאריכי סוף השנה: לפי תזרים מפעילות (חיוני ל-Dickinson), משלימים מהכנסות/רווח
-    idx = base[0].index
-    for s in base[1:]:
-        extra = [d for d in s.index if not (np.abs((idx - d).days) <= 20).any()]
-        idx = idx.append(pd.DatetimeIndex(extra))
-    idx = idx.sort_values()
-    fy = pd.DataFrame({k: _align(v, idx) for k, v in raw.items()}, index=idx)
-    return fy, prov
 
 
 # ---------------------------------------------------------------------------

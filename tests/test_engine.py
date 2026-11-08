@@ -22,8 +22,7 @@ def fiscal_quarters(start_year, n_years):
     return out
 
 
-def make_facts(rev_q, ni_q, ocf_q, cash, shares, start_year=2019, debt=None, style_ytd_cf=True, op_q=None,
-               cfi_q=None, cff_q=None):
+def make_facts(rev_q, ni_q, ocf_q, cash, shares, start_year=2019, debt=None, style_ytd_cf=True, op_q=None):
     """
     בונה JSON בפורמט companyfacts:
     הכנסות ורווח – דיווח רבעוני ל-Q1-Q3 + שנתי בלבד ל-Q4 (כמו ב-10-K).
@@ -57,10 +56,6 @@ def make_facts(rev_q, ni_q, ocf_q, cash, shares, start_year=2019, debt=None, sty
         "NetCashProvidedByUsedInOperatingActivities": {"units": {"USD": flow(ocf_q, ytd_only=style_ytd_cf)}},
         "CashAndCashEquivalentsAtCarryingValue": {"units": {"USD": instant(cash)}},
     }
-    if cfi_q is not None:
-        gaap["NetCashProvidedByUsedInInvestingActivities"] = {"units": {"USD": flow(cfi_q, ytd_only=style_ytd_cf)}}
-    if cff_q is not None:
-        gaap["NetCashProvidedByUsedInFinancingActivities"] = {"units": {"USD": flow(cff_q, ytd_only=style_ytd_cf)}}
     if op_q is not None:
         gaap["OperatingIncomeLoss"] = {"units": {"USD": flow(op_q)}}
     if debt is not None:
@@ -88,108 +83,75 @@ def test_quarter_reconstruction():
     print("✓ quarter reconstruction (Q4 from 10-K, cash flow from YTD)")
 
 
-def _stage(ocf, cfi, cff, n=12, rev=None, ni=None):
-    rev = rev or [200e6] * n
-    ni = ni or [10e6] * n
-    f = make_facts(rev, ni, [ocf] * n, [1e9] * n, [100e6] * n, cfi_q=[cfi] * n, cff_q=[cff] * n)
-    d = sec_data.build_company_data(f, "T", "T", 1)
-    return analysis.diagnose(d)
-
-
-def test_dickinson_patterns():
-    """8 הצירופים של Dickinson (2011) → 5 שלבים."""
-    cases = {
-        (-1, -1, +1): "introduction", (+1, -1, +1): "growth", (+1, -1, -1): "mature",
-        (-1, -1, -1): "shakeout", (+1, +1, +1): "shakeout", (+1, +1, -1): "shakeout",
-        (-1, +1, +1): "decline", (-1, +1, -1): "decline",
-    }
-    for (o, i, f), want in cases.items():
-        dg = _stage(o * 30e6, i * 20e6, f * 10e6)
-        assert dg.stage == want, ((o, i, f), dg.stage)
-        assert dg.latest["pattern"] == "".join("+" if x > 0 else "-" for x in (o, i, f))
-    print("✓ all 8 Dickinson cash-flow patterns map to the right stage")
-
-
-def test_materiality():
-    """תזרים השקעות ומימון זניחים (כמו Palantir) לא הופכים חברה ל'התנערות'."""
-    dg = _stage(4000e6, 20e6, 9e6)  # + + + גולמי, אבל השניים האחרונים זניחים
-    assert dg.stage == "mature", dg.stage
-    assert set(dg.latest["near_zero"]) == {"cfi_ttm", "cff_ttm"}
-    dg = _stage(4000e6, 900e6, -500e6)  # מכירת נכסים מהותית – נשאר התנערות
-    assert dg.stage == "shakeout", dg.stage
-    print("✓ materiality: near-zero investing/financing flows treated as no activity")
-
-
-def test_damodaran_lens():
+def test_startup():
     n = 12
-    # הכנסות זניחות → סטארטאפ
-    dg = _stage(-30e6, -20e6, 60e6, rev=[1e6] * n, ni=[-40e6] * n)
-    assert dg.damodaran == "startup", dg.damodaran
-    # צמיחה מהירה + רווח → צמיחה גבוהה
-    dg = _stage(50e6, -30e6, 10e6, rev=[100e6 * 1.08 ** i for i in range(n)], ni=[20e6] * n)
-    assert dg.damodaran == "high_growth", dg.damodaran
-    # צמיחה איטית + רווח → בשלות יציבה
-    dg = _stage(50e6, -30e6, -10e6, rev=[100e6 * 1.005 ** i for i in range(n)], ni=[20e6] * n)
-    assert dg.damodaran == "mature_stable", dg.damodaran
-    # הכנסות יורדות → דעיכה
-    dg = _stage(50e6, -30e6, -10e6, rev=[100e6 * 0.97 ** i for i in range(n)], ni=[20e6] * n)
-    assert dg.damodaran == "decline", dg.damodaran
-    print("✓ Damodaran lens: startup / high growth / mature stable / decline")
+    f = make_facts([0] * n, [-100e6] * n, [-95e6] * n, [900e6 - 50e6 * i for i in range(n)], [400e6 + 5e6 * i for i in range(n)])
+    d, dg = run(f)
+    assert dg.stage == "startup", dg.stage
+    assert dg.runway["months_fcf"] is not None
+    print(f"✓ startup → {dg.stage_he}, runway {dg.runway['months_fcf']:.0f}m, risk {dg.risk_score} ({dg.risk_level})")
 
 
-def test_securities_trading_neutralized():
-    """מכירת ניירות ערך (ניהול קופה) לא הופכת חברה בשלה ל'התנערות'."""
-    n = 12
-    f = make_facts([200e6] * n, [10e6] * n, [30e6] * n, [1e9] * n, [100e6] * n,
-                   cfi_q=[40e6] * n, cff_q=[-10e6] * n)  # תזרים השקעות חיובי בגלל מכירת ני"ע
-    gaap = f["facts"]["us-gaap"]
-    gaap["MarketableSecuritiesCurrent"] = {"units": {"USD": [
-        {"end": e, "val": 2e9 - 0.06e9 * k, "filed": e, "form": "10-Q", "accn": f"a{k}"}
-        for k, e in enumerate(r["end"] for r in gaap["CashAndCashEquivalentsAtCarryingValue"]["units"]["USD"])]}}
-    d = sec_data.build_company_data(f, "T", "T", 1)
-    dg = analysis.diagnose(d)
-    assert dg.latest["cfi_raw_ttm"] > 0 and dg.latest["cfi_ttm"] < 0, (dg.latest["cfi_raw_ttm"], dg.latest["cfi_ttm"])
-    assert dg.stage == "mature", dg.stage
-    print("✓ securities sales neutralized in investing cash flow (stays 'mature')")
+def test_startup_to_growth():
+    n = 16
+    rev = [0] * 8 + [5e6, 15e6, 30e6, 50e6, 80e6, 120e6, 170e6, 230e6]
+    f = make_facts(rev, [-60e6] * n, [-50e6] * n, [1e9] * n, [100e6] * n)
+    d, dg = run(f)
+    assert dg.stage == "startup_to_growth", dg.stage
+    print(f"✓ startup→growth → {dg.stage_he}, risk {dg.risk_score}")
 
 
-def test_edge_signal():
-    """תזרים מפעילות שלילי שמתקרב לאפס → על הסף למעבר מהיכרות לצמיחה."""
-    n = 12
-    ocf = [-60e6 + 5e6 * i for i in range(n)]
-    f = make_facts([200e6] * n, [-10e6] * n, ocf, [1e9] * n, [100e6] * n, cfi_q=[-20e6] * n, cff_q=[30e6] * n)
-    d = sec_data.build_company_data(f, "T", "T", 1)
-    dg = analysis.diagnose(d)
-    assert dg.stage == "introduction", dg.stage
-    edges = analysis.edge_signals(dg)
-    assert any(e["to"] == "growth" for e in edges), edges
-    print("✓ edge signal: operating cash flow approaching zero → growth")
+def test_growth_loss_approaching():
+    n = 20
+    rev = [100e6 * (1.07 ** i) for i in range(n)]
+    ni = [-120e6 + 5e6 * i for i in range(n)]  # מצטמצם, עדיין שלילי
+    f = make_facts(rev, ni, [x * 0.8 for x in ni], [2e9] * n, [300e6] * n)
+    d, dg = run(f)
+    assert dg.stage == "growth_loss", dg.stage
+    assert dg.breakeven["trend"] == "narrowing"
+    print(f"✓ growth_loss → {dg.stage_he}, breakeven in {dg.breakeven['quarters']}q, approaching={dg.approaching_profit}")
 
 
 def test_inflection_and_events():
     n = 20
     rev = [100e6 * (1.07 ** i) for i in range(n)]
-    ni = [-60e6 + 5e6 * i for i in range(n)]
-    f = make_facts(rev, ni, ni, [2e9] * n, [300e6] * n, cfi_q=[-20e6] * n, cff_q=[10e6] * n)
+    ni = [-60e6 + 5e6 * i for i in range(n)]  # הופך חיובי באמצע
+    f = make_facts(rev, ni, ni, [2e9] * n, [300e6] * n)
     d = sec_data.build_company_data(f, "T", "T", 1)
     idx = pd.bdate_range("2019-01-01", "2024-03-01")
     d.prices = pd.Series(np.linspace(10, 100, len(idx)), index=idx)
     dg = analysis.diagnose(d)
+    hist = dg.history
+    assert "inflection" in set(hist.values), set(hist.values)
     assert len(dg.events) == 1, dg.events
-    assert dg.events.iloc[0]["return_since"] > 0
-    print(f"✓ profit-transition event detected at {dg.events.iloc[0]['quarter_end'].date()}")
+    ev = dg.events.iloc[0]
+    assert ev["return_since"] > 0
+    print(f"✓ inflection detected at {ev['quarter_end'].date()} (event {ev['event_date'].date()}), "
+          f"return since {ev['return_since']:.0%}; current stage {dg.stage_he}")
 
 
-def test_runway_and_dilution():
+def test_value():
+    n = 20
+    rev = [1e9 * (1.01 ** i) for i in range(n)]
+    f = make_facts(rev, [150e6] * n, [200e6] * n, [3e9] * n, [500e6 - 1e6 * i for i in range(n)], debt=[1e9] * n)
+    d, dg = run(f)
+    assert dg.stage == "value", dg.stage
+    assert dg.runway["self_funded"]
+    print(f"✓ value → {dg.stage_he}, risk {dg.risk_score} ({dg.risk_level})")
+
+
+def test_loss_slow_and_dilution():
     n = 16
-    f = make_facts([200e6] * n, [-40e6] * n, [-40e6] * n, [300e6 - 15e6 * i for i in range(n)],
-                   [100e6 * (1.06 ** i) for i in range(n)], debt=[400e6] * n, cfi_q=[-5e6] * n, cff_q=[20e6] * n)
-    d = sec_data.build_company_data(f, "T", "T", 1)
-    dg = analysis.diagnose(d)
-    assert dg.stage == "introduction"
+    rev = [200e6 * (1.005 ** i) for i in range(n)]
+    f = make_facts(rev, [-40e6] * n, [-40e6] * n, [300e6 - 15e6 * i for i in range(n)],
+                   [100e6 * (1.06 ** i) for i in range(n)], debt=[400e6] * n)
+    d, dg = run(f)
+    assert dg.stage == "loss_slow", dg.stage
     assert dg.latest["dilution_yoy"] > 0.2
     assert dg.risk_score >= 60, dg.risk_score
-    print(f"✓ runway + dilution → risk {dg.risk_score} ({dg.risk_level})")
+    print(f"✓ loss_slow → {dg.stage_he}, risk {dg.risk_score} ({dg.risk_level})")
+    for pts, r in dg.risk_reasons:
+        print(f"    +{pts}: {r}")
 
 
 def test_non_operating_profit_is_not_inflection():
@@ -232,13 +194,12 @@ def test_spac_shell_filings_are_dropped_and_securities_counted():
 
 if __name__ == "__main__":
     test_quarter_reconstruction()
-    test_dickinson_patterns()
-    test_materiality()
-    test_damodaran_lens()
-    test_securities_trading_neutralized()
-    test_edge_signal()
+    test_startup()
+    test_startup_to_growth()
+    test_growth_loss_approaching()
     test_inflection_and_events()
-    test_runway_and_dilution()
+    test_value()
+    test_loss_slow_and_dilution()
     test_non_operating_profit_is_not_inflection()
     test_spac_shell_filings_are_dropped_and_securities_counted()
     print("\nכל הבדיקות עברו")

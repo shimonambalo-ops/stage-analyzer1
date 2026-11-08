@@ -62,14 +62,10 @@ def sources(data, dg) -> list[dict]:
     sec_items = [i for i in ("securities_total", "st_investments", "lt_securities") if i in used]
     debt_items = [i for i in ("debt_total", "debt_noncurrent", "debt_current") if i in used]
     return [
-        entry("revenue_ttm", "הכנסות, 12 חודשים", L.get("revenue_ttm"), ["revenue"], "בסיס לצמיחת ההכנסות. " + ttm_how),
+        entry("revenue_ttm", "הכנסות, 12 חודשים", L.get("revenue_ttm"), ["revenue"], ttm_how),
         entry("net_income_ttm", "רווח נקי, 12 חודשים", L.get("net_income_ttm"), ["net_income"], ttm_how),
         entry("op_income_ttm", "רווח תפעולי, 12 חודשים", L.get("op_income_ttm"), ["op_income"], ttm_how),
         entry("fcf_ttm", "תזרים חופשי, 12 חודשים", L.get("fcf_ttm"), ["ocf", "capex"], "תזרים מפעילות שוטפת פחות השקעות ברכוש קבוע, " + ttm_how),
-        entry("ocf_ttm", "תזרים מפעילות שוטפת, 12 חודשים", L.get("ocf_ttm"), ["ocf"], "Dickinson: הרכיב הראשון. " + ttm_how),
-        entry("cfi_ttm", "תזרים מהשקעות (מנוטרל), 12 חודשים", L.get("cfi_ttm"), ["cfi"] + sec_items,
-              "Dickinson: הרכיב השני. " + ttm_how + ", בניכוי קנייה ומכירה נטו של ניירות ערך סחירים (השינוי ביתרתם במאזן)"),
-        entry("cff_ttm", "תזרים ממימון, 12 חודשים", L.get("cff_ttm"), ["cff"], "Dickinson: הרכיב השלישי. " + ttm_how),
         entry("liquid", "מזומן וניירות ערך", L.get("liquid"), ["cash"] + sec_items, "מזומן ושווי מזומן + ניירות ערך סחירים (שוטפים ולא שוטפים), לסוף הרבעון"),
         entry("debt", "חוב פיננסי", L.get("debt"), debt_items, "חוב לטווח ארוך + חלויות שוטפות, לסוף הרבעון. לא כולל התחייבויות חכירה"),
         entry("shares", "מספר מניות", L.get("shares"), ["shares"], "כפי שדווח בעמוד הראשון של הדוח האחרון"),
@@ -136,11 +132,10 @@ def checks(data, dg) -> list[dict]:
                       "כל התקופות בשלוש השנים האחרונות קיימות." if not bad else f"נמצאו {len(bad)} פערים בסדרה – חלק מהגרפים יהיו מקוטעים."))
 
     # 5. כיסוי
-    need = {"revenue": "הכנסות", "net_income": "רווח נקי", "ocf": "תזרים מפעילות", "cfi": "תזרים מהשקעות",
-            "cff": "תזרים ממימון", "cash": "מזומן", "shares": "מספר מניות"}
+    need = {"revenue": "הכנסות", "net_income": "רווח נקי", "ocf": "תזרים מפעילות", "cash": "מזומן", "shares": "מספר מניות"}
     missing = [v for k, v in need.items() if k not in used]
     out.append(_check("coverage", "כל הנתונים הבסיסיים נמצאו בדוחות", "ok" if not missing else "warn",
-                      "הכנסות, רווח, שלושת חלקי דוח התזרים, מזומן ומניות – כולם נמצאו." if not missing else "חסרים: " + ", ".join(missing) + "."))
+                      "הכנסות, רווח, תזרים, מזומן ומניות – כולם נמצאו." if not missing else "חסרים: " + ", ".join(missing) + "."))
     if not any(k in used for k in ("debt_total", "debt_noncurrent", "debt_current")):
         out.append(_check("debt_found", "חוב פיננסי", "info", "לא נמצא חוב בדוחות. ייתכן שאין לחברה חוב, או שהוא מדווח תחת שם לא סטנדרטי."))
 

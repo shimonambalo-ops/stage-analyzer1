@@ -16,7 +16,6 @@ import analysis
 import news_data
 import profile_data
 import sec_data
-import stage_engine
 import verify
 
 UA = os.environ.get("SEC_USER_AGENT") or sec_data.DEFAULT_UA
@@ -133,19 +132,6 @@ def analyze(ticker: str) -> dict:
 
     cfg = analysis.Config()
     dg = analysis.diagnose(data, cfg)
-    sub = _cached(("sub", info["cik"]), 6 * 3600, lambda: profile_data.fetch_submissions(info["cik"], UA)) or {}
-    try:
-        engine = stage_engine.evaluate(data, dg.latest, sic=sub.get("sic"), market_cap=mcap if data.currency == "USD" else None)
-    except Exception as e:  # המנוע לא יפיל את כל העמוד
-        engine = {"suitable": True, "stage": None, "reason": f"שגיאה בחישוב מנוע השלבים: {e}"}
-    engine["sic"], engine["sic_he"] = sub.get("sic"), sub.get("sicDescription")
-    narrative = analysis.status_narrative(dg, data.name)
-    if engine.get("stage"):
-        # שתי השורות הראשונות (Dickinson ל-12 חודשים, Damodaran) ושורת הסיכון מוחלפות בתוצאת המנוע
-        body = [x for x in narrative if not x.startswith(("לפי מודל Dickinson", "לפי מחזור החיים של Damodaran", "רמת הסיכון ביחס לשלב"))]
-        R = engine["risk"]
-        narrative = ([f"{data.name} בשלב \"{engine['stage_he']}\" (ביטחון {engine['confidence']}%)."] + body
-                     + [f"רמת הסיכון ביחס לשלב: {R['level']} ({R['score']}/100)."])
     m = dg.metrics
 
     change_1d = None
@@ -170,7 +156,6 @@ def analyze(ticker: str) -> dict:
         "op_income_ttm": list(m["op_income_ttm"]) if "op_income_ttm" in m else [],
         "ocf_ttm": list(m["ocf_ttm"]) if "ocf_ttm" in m else [],
         "cfi_ttm": list(m["cfi_ttm"]) if "cfi_ttm" in m else [],
-        "cfi_raw_ttm": list(m["cfi_raw_ttm"]) if "cfi_raw_ttm" in m else [],
         "cff_ttm": list(m["cff_ttm"]) if "cff_ttm" in m else [],
         "liquid": list(m["liquid"]), "debt": list(m["debt"]), "shares": list(m["shares"]),
         "stage": [s for s in dg.history.reindex(m.index).fillna("unknown")],
@@ -187,20 +172,12 @@ def analyze(ticker: str) -> dict:
                  "positives": [{"pts": p, "text": t} for p, t in dg.positives]},
         "runway": dg.runway, "breakeven": dg.breakeven, "latest": dg.latest,
         "scores": analysis.scorecards(dg),
-        "narrative": narrative,
+        "narrative": analysis.status_narrative(dg, data.name),
         "edges": analysis.edge_signals(dg, cfg),
         "events": dg.events.to_dict("records") if len(dg.events) else [],
         "series": series, "prices": _price_series(prices),
         "yearly": _yearly_snapshots(m),
-        "stages": {k: {"he": v["he"], "en": v["en"], "color": v["color"], "order": v["order"]} for k, v in analysis.STAGES.items()},
-        "damodaran": ({"code": dg.damodaran, **analysis.DAMODARAN[dg.damodaran]} if dg.damodaran else None),
-        "damodaran_stages": [{"code": k, "he": v["he"], "rule": v["rule"]} for k, v in analysis.DAMODARAN.items()],
-        "dickinson_table": [{"pattern": "".join(k), "stage": v, "he": analysis.STAGES[v]["he"]} for k, v in analysis.DICKINSON.items()],
-        "engine": engine,
-        "engine_model": {"weights": stage_engine.C.WEIGHTS, "expect": stage_engine.EXPECT_TEXT,
-                         "labels": stage_engine.LABELS, "stages": stage_engine.C.STAGES,
-                         "dickinson_he": stage_engine.C.DICKINSON_HE,
-                         "affinity": stage_engine.C.DICKINSON_AFFINITY},
+        "stages": {k: {"he": v["he"], "color": v["color"]} for k, v in analysis.STAGES.items()},
         "concepts": data.concepts_used,
         "checks": verify.checks(data, dg),
         "sources": verify.sources(data, dg),

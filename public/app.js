@@ -7,8 +7,9 @@
     grid: '#EEF2F6', font: "'IBM Plex Sans Hebrew', 'Segoe UI', sans-serif",
   };
   const EXAMPLES = ['ASTS', 'QS', 'TE', 'LMND', 'PLTR', 'SOFI', 'HOOD', 'KO'];
-  const STATIONS = ['סטארט-אפ', 'צמיחה', 'צמיחה רווחית', 'ערך'];
-  const POS = { startup: 0, growth: 1, profitable: 2, value: 3 };
+  const STATIONS = ['סטארטאפ', 'צמיחה הפסדית', 'מעבר לרווח', 'צמיחה רווחית', 'ערך'];
+  const POS = { startup: 0, startup_to_growth: 0.5, growth_loss: 1, inflection: 2, growth_profit: 3, maturing: 3.5,
+    value: 4, value_to_growth: 3.5, loss_slow: 1, declining: 4, unknown: 0 };
   const REC_HE = { strong_buy: 'קנייה חזקה', buy: 'קנייה', hold: 'החזק', underperform: 'תשואת חסר', sell: 'מכירה', strong_sell: 'מכירה חזקה', none: '—' };
 
   const EXPLAIN = {
@@ -36,22 +37,9 @@
     short: 'אחוז מהמניות הצפות שמושאלות למכירה בחסר – כלומר הימורים על ירידה.',
     inst: 'אחוז מהמניות שמוחזקות בידי גופים מוסדיים: קרנות, בנקים וחברות ביטוח.',
     insider: 'אחוז מהמניות שמוחזקות בידי מנהלים, מייסדים ובעלי עניין.',
-    risk: 'ציון 0–100 ביחס לשלב: לכל שלב בסיס משלו, ועליו נוספים סימני אזהרה שמתאימים לשלב – קופה קצרה ודילול בסטארט-אפ, האטה בצמיחה, חוב וחלוקה גבוהה מהתזרים בחברות בוגרות, ותמחור שמגלם צמיחה גבוהה מהמציאות.',
-    engine: 'השלב נקבע בשתי שכבות: (1) דפוס תזרימי המזומנים של Dickinson (2011) ב-3 שנות הכספים האחרונות – 35% מהציון; (2) מדדים תומכים בסגנון Damodaran: צמיחה, השקעות מול פחת, תשואה על ההון, תזרים חופשי וחלוקה לבעלים. כל מדד נותן נקודות לשלבים שהוא מתאים להם, והשלב עם הניקוד הגבוה מנצח.',
-    confidence: 'הפער בין השלב שזכה לשלב שבמקום השני. פער גדול = ביטחון גבוה. ביטחון נמוך פירושו שהחברה כנראה בין שני שלבים. יורד גם כשחסרים נתונים או שיש פחות מ-3 שנות דוחות.',
-    path: 'לכל שנת כספים: הסימן של תזרים מפעילות, מהשקעות וממימון לפי הדוח השנתי, והשלב שהצירוף מייצג לפי Dickinson. "בוגרת" = צמיחה רווחית או ערך – המדדים מכריעים ביניהם.',
-    m_growth: 'צמיחה שנתית ממוצעת של ההכנסות (CAGR) ב-3 שנות הכספים האחרונות.',
-    m_capex: 'השקעות ברכוש קבוע חלקי הפחת. מעל 1 = החברה מרחיבה את הבסיס שלה; מתחת ל-1 = משקיעה פחות ממה שנשחק.',
-    m_roic: 'רווח תפעולי אחרי מס חלקי ההון המושקע (חוב + הון עצמי − מזומן). כמה החברה מרוויחה על כל דולר שהושקע בעסק.',
-    m_fcf: 'תזרים מפעילות פחות השקעות ברכוש קבוע, חלקי ההכנסות – בשנת הכספים האחרונה.',
-    m_payout: 'כמה מהתזרים החופשי חזר לבעלי המניות (דיבידנד + קנייה עצמית), ובכמה השתנה מספר המניות הממוצע בשנה.',
+    risk: 'ציון 0–100 שמשלב את השלב של החברה, הקופה, החוב, הדילול, מגמת ההפסדים, התמחור והתנודתיות. הפירוט ב"סימני אזהרה" ו"נקודות חוזק".',
     scores: 'ציונים שלנו בסולם 1–10, לפי הנתונים מהדוחות. צמיחה – קצב גידול ההכנסות; רווחיות – שולי רווח ותזרים; חוסן – קופה, חוב ודילול; תמחור – מכפילים (גבוה = זול).',
-    edge: 'אחד משלושת התזרימים קרוב לאפס, והמגמה ב-4 הרבעונים האחרונים צפויה להפוך את הסימן שלו – ואז, לפי Dickinson, משתנה גם השלב.',
-    dickinson: 'מודל אקדמי (Dickinson, The Accounting Review, 2011): השלב נקבע לפי הסימן של שלושת חלקי דוח תזרים המזומנים ב-12 החודשים האחרונים – פעילות שוטפת, השקעות ומימון. 8 צירופים → 5 שלבים. ההסבר המלא בלשונית "אמינות הנתונים".',
-    damodaran: 'מחזור החיים של Aswath Damodaran (NYU): שישה שלבים לפי צמיחת ההכנסות והרווחיות, וכל שלב מתמחרים אחרת. Damodaran מתאר את השלבים במילים – הספים המספריים הם התרגום שלנו.',
-    cfo: 'המזומן שהפעילות העסקית מייצרת (חיובי) או שורפת (שלילי) – לפני השקעות ומימון.',
-    cfi: 'השקעות ברכוש קבוע, רכישות וכדומה (בדרך כלל שלילי). חיובי = החברה מוכרת נכסים. מנוטרל מקנייה ומכירה של ניירות ערך סחירים.',
-    cff: 'כסף שהחברה גייסה (חיובי – הנפקות, הלוואות) או החזירה למשקיעים (שלילי – דיבידנד, קנייה עצמית, החזר חוב).',
+    edge: 'החברה קרובה לגבול של שלב אחר ונעה לכיוונו, לפי המגמה ב-4 הרבעונים האחרונים.',
   };
   const tipBtn = (key) => (EXPLAIN[key] ? `<button type="button" class="i" data-tip="${key}" aria-label="הסבר">?</button>` : '');
   function verdict(kind, v) {
@@ -121,18 +109,25 @@
   }
 
   // ---------------- מסלול ----------------
-  function trackHTML(stage, color) {
-    const pos = POS[stage];
-    const off = pos === undefined;   // טלטלה / דעיכה / אין סיווג – מוצגות כאזהרה, מחוץ למסלול
-    const last = STATIONS.length - 1;
+  function trackHTML(stage, color, edges = []) {
+    const pos = POS[stage] ?? 0;
+    const off = stage === 'loss_slow' || stage === 'declining';
     let st = '';
     STATIONS.forEach((nm, i) => {
-      const c = (!off && i <= pos ? 'past ' : '') + (i === 0 || i === last ? 'end' : '');
-      st += `<div class="station ${c}" style="right:${(i / last) * 100}%;color:${color}"><div class="dot"></div><div class="nm">${nm}</div></div>`;
+      const c = (i <= pos ? 'past ' : '') + (i === 0 || i === STATIONS.length - 1 ? 'end' : '');
+      st += `<div class="station ${c}" style="right:${(i / 4) * 100}%;color:${color}"><div class="dot"></div><div class="nm">${nm}</div></div>`;
     });
-    return `<div class="track${off ? ' off' : ''}">
-      <div class="line"></div>${off ? '' : `<div class="fill" style="width:${(pos / last) * 100}%;background:${color}"></div>`}
-      ${st}${off ? '' : `<div class="marker" style="right:${(pos / last) * 100}%;color:${color}"><div class="pin"></div></div>`}
+    let edge = '';
+    const e = edges.find((x) => POS[x.to] !== undefined && POS[x.to] !== pos);
+    if (e) {
+      const a = pos / 4 * 100, b = POS[e.to] / 4 * 100;
+      const lo = Math.min(a, b), hi = Math.max(a, b);
+      edge = `<div class="edge ${b > a ? 'toL' : 'toR'}" style="right:${lo}%;width:${hi - lo}%;color:${color};border-color:${color}"></div>`;
+    }
+    return `<div class="track">
+      <div class="line"></div>${off ? '' : `<div class="fill" style="width:${(pos / 4) * 100}%;background:${color}"></div>`}
+      ${edge}${st}
+      <div class="marker" style="right:${(pos / 4) * 100}%;color:${color}"><div class="pin"></div></div>
     </div>`;
   }
 
@@ -203,7 +198,7 @@
     });
     $('#examples').innerHTML = EXAMPLES.map((t) => `<button class="pill" data-t="${t}">${t}</button>`).join('');
     $('#examples').addEventListener('click', (e) => { const b = e.target.closest('button'); if (b) go(b.dataset.t); });
-    $('#heroTrack').innerHTML = trackHTML('growth', C.ink);
+    $('#heroTrack').innerHTML = trackHTML('growth_loss', C.ink);
     $('#brand').addEventListener('click', (e) => { e.preventDefault(); history.pushState({}, '', '/'); route(); });
   }
 
@@ -259,11 +254,7 @@
       return;
     }
     $('#subnav').hidden = false;
-    const G = A.engine || {};
-    A.main = G.stage ? { code: G.stage, he: G.stage_he, color: G.color }
-      : G.suitable === false ? { code: 'na', he: 'המודל לא מתאים', color: '#5B6B82' }
-      : { code: 'na', he: A.stage_he, color: A.stage_color };
-    document.title = `${A.ticker} · ${A.main.he} – מסלול`;
+    document.title = `${A.ticker} · ${A.stage_he} – מסלול`;
     renderMast(A, null);
     renderOverview(A);
     renderChart(A);
@@ -318,114 +309,22 @@
     }
     const name = P.name || A.name;
     $('#mast').innerHTML = `<div class="mast">
-      <div class="mono" style="background:${A.main.color}">${esc(A.ticker.slice(0, 5))}</div>
+      <div class="mono" style="background:${A.stage_color}">${esc(A.ticker.slice(0, 5))}</div>
       <div><h1><bdi>${esc(name)}</bdi></h1><div class="chips">${chips.join('')}</div></div>
       ${px}${nx}</div>`;
     $('#status').innerHTML = (A.warnings || []).map((w) => `<div class="notice">${esc(w)}</div>`).join('');
   }
 
   // ---------------- סקירה ----------------
-  const pp = (x, d) => { const v = +(x * 100).toFixed(d); return n(`${v > 0 ? '+' : ''}${(v === 0 ? 0 : v).toFixed(d)}`); };
-  const SIGN = (c) => (c === '+' ? '<span class="sign p">+</span>' : '<span class="sign m">−</span>');
-  // מספרים בתוך טקסט עברי: עוטפים ב-span.num כדי שסימן המינוס והאחוז יישארו במקום
-  const numWrap = (t) => esc(t).replace(/(?<![\u0590-\u05FFA-Za-z])[+\-−]?\$?\d[\d.,]*%?[BMK]?/g, (m) => `<span class="num">${m}</span>`);
-  const pctPlain = (x, d = 0) => (bad(x) ? '—' : `${(x * 100).toFixed(d)}%`);
-
-  function engineCard(A) {
-    const G = A.engine || {}, L = A.latest;
-    if (G.suitable === false) {
-      return `<div class="card trackcard"><div class="kicker">שלב במחזור החיים</div>
-        <h2 style="color:${C.muted}">המודל לא מתאים לחברה הזו</h2>
-        <p class="lead" style="margin:10px 0 0">${esc(G.reason)}</p>
-        ${G.sic_he ? `<div class="note">סיווג הענף ב-SEC: ${esc(G.sic_he)} (SIC ${n(esc(G.sic))}).</div>` : ''}</div>`;
-    }
-    if (!G.stage) {
-      return `<div class="card trackcard"><div class="kicker">שלב במחזור החיים</div>
-        <h2 style="color:${C.muted}">אין מספיק נתונים</h2><p class="lead">${esc(G.reason || '')}</p></div>`;
-    }
-    const color = G.color, R = G.risk;
-    const rcol = R.score < 25 ? C.green : R.score < 50 ? C.amber : C.red;
-    const ccol = G.confidence >= 60 ? C.green : G.confidence >= 30 ? C.amber : C.red;
-    const warnBox = G.warning ? `<div class="stagewarn" style="border-color:${color};color:${color}">
-        <b>⚠ ${esc(G.stage_he)}</b> – שלב שמוצג כאזהרה ולא כתחנה במסלול. המדדים הכי קרובים ל"${esc(G.second_he)}".</div>` : '';
-
-    // מסלול Dickinson על ציר זמן
-    const D = G.dickinson;
-    const nodes = D.path.map((p, i) => {
-      const inVote = i >= D.path.length - 3;
-      const col = (A.stages[p.stage] || {}).color || C.muted;
-      const nz = (p.near_zero || []).length ? ' title="רכיב קטן מ-3% מהתזרים הגדול נחשב &quot;אין פעילות&quot; (−)"' : '';
-      return `<div class="pnode${inVote ? ' vote' : ''}"${nz}><div class="py num">${p.year}</div>
-        <div class="ppat">${p.pattern.split('').map(SIGN).join('')}</div>
-        <div class="pst" style="color:${col}">${esc(p.he)}</div></div>`;
-    }).join('<div class="parrow">←</div>');
-    const ttm = L.pattern ? `<div class="parrow">·</div><div class="pnode ttm" title="12 החודשים האחרונים – להשוואה, לא נכלל בהצבעה">
-        <div class="py">12 ח' אחרונים</div><div class="ppat">${L.pattern.split('').map(SIGN).join('')}</div>
-        <div class="pst" style="color:${(A.stages[A.stage] || {}).color}">${esc(A.stage_he)}</div></div>` : '';
-    const votes = Object.entries(D.votes).map(([k, v]) => `${esc(A.engine_model.dickinson_he[k])} ×${v}`).join(', ');
-
-    // טבלת המדדים
-    const aff = A.engine_model.affinity[D.stage][G.stage];
-    const dRow = `<tr><td><b>דפוס התזרימים (Dickinson)</b>${tipBtn('dickinson')}</td>
-      <td>${esc(D.he)} <span class="muted">(${votes}${D.tie ? '; תיקו – לפי השנה האחרונה' : ''})</span></td>
-      <td>${esc(G.stage === 'profitable' || G.stage === 'value' ? 'בוגרת' : G.stage === 'startup' ? 'סטארט-אפ' : G.stage === 'growth' ? 'צמיחה' : G.stage_he)}</td>
-      <td>${aff >= 0.5 ? '<span class="ok">✓</span>' : '<span class="no">✗</span>'}</td><td class="num">35%</td></tr>`;
-    const rows = G.table.map((t) => `<tr><td>${esc(t.label)}${tipBtn('m_' + t.key)}</td>
-      <td>${t.value ? numWrap(t.value) : '<span class="muted">אין נתון</span>'}</td><td>${numWrap(t.expected)}</td>
-      <td>${t.ok === null ? '<span class="muted">—</span>' : t.ok ? '<span class="ok">✓</span>' : '<span class="no">✗</span>'}</td>
-      <td class="num">${Math.round(t.weight * 100)}%</td></tr>`).join('');
-    const M = G.metrics;
-    const extra = [
-      !bad(M.accel) && ['האצה בצמיחה', `${pp(M.accel, 0)} נק' אחוז`, 'הצמיחה בשנה האחרונה פחות הצמיחה בשנה שלפניה'],
-      !bad(M.op_slope) && ['מגמת שולי התפעול', `${pp(M.op_slope, 1)} נק' אחוז בשנה`, 'שיפוע ב-3 השנים האחרונות'],
-      !bad(M.gross_slope) && ['מגמת השולי הגולמי', `${pp(M.gross_slope, 1)} נק' אחוז בשנה`, 'שיפוע ב-3 השנים האחרונות'],
-      !bad(M.runway_months) && ['כמה זמן הקופה מחזיקה', months(M.runway_months), 'קופה חלקי שריפת התזרים החופשי ב-12 החודשים האחרונים'],
-      !bad(M.implied_growth) && ['צמיחה מגולמת במחיר', n(pctPlain(M.implied_growth, 1)), 'הצמיחה הקבועה לנצח שמצדיקה את השווי הנוכחי, בהיוון של 9%'],
-      !bad(M.net_debt_ebitda) && ['חוב נטו / EBITDA', M.net_debt_ebitda < 0 ? 'מזומן נטו' : `פי ${n(M.net_debt_ebitda.toFixed(1))}`, 'חוב פחות קופה, חלקי רווח תפעולי לפני פחת'],
-    ].filter(Boolean).map(([a, b, c]) => `<div class="xm"><span class="muted">${a}</span><b>${b}</b><small>${esc(c)}</small></div>`).join('');
-
-    const contra = G.contradiction ? `<div class="contra"><b>סתירה בין המודלים</b><div>${esc(G.contradiction.text)}</div></div>` : '';
-    const lowc = G.low_confidence ? '<div class="note">פחות מ-3 שנות דוחות – הביטחון הורד.</div>' : '';
-    const cov = G.coverage < 1 ? `<div class="note">חלק מהמדדים חסרים בדוחות, ולכן המשקלות נורמלו מחדש על ${Math.round(G.coverage * 100)}% מהמודל.</div>` : '';
-
-    return `<div class="card trackcard">
-        <div class="track-head">
-          <div><div class="kicker">שלב במחזור החיים${tipBtn('engine')}</div>
-          <h2 style="color:${color}">${esc(G.stage_he)}</h2></div>
-          <div class="badges">
-            <span class="bdg" style="color:${ccol}">ביטחון ${n(G.confidence + '%')}${tipBtn('confidence')}</span>
-            <span class="bdg" style="color:${rcol}">סיכון ${esc(R.level)} ביחס לשלב</span>
-          </div></div>
-        ${trackHTML(G.stage, color)}${warnBox}
-        <div class="why">${(G.why || []).map((w) => `<p>${numWrap(w).replace(/([+\-]{3})/g, '<span class="num">$1</span>')}</p>`).join('')}</div>
-        ${contra}
-        <div class="judge"><b>${esc(G.judge_by)}</b></div>
-        <h3 class="h3" style="margin-top:20px">מסלול Dickinson לפי שנות כספים${tipBtn('path')}</h3>
-        <div class="dpath">${nodes}${ttm}</div>
-        <div class="note">השלב של Dickinson נקבע לפי הנפוץ ב-3 השנים האחרונות (המודגשות). סימנים: פעילות שוטפת, השקעות, מימון.</div>
-        <h3 class="h3" style="margin-top:20px">המדדים מול הפרופיל של "${esc(G.stage_he)}"</h3>
-        <div class="tablewrap"><table class="fin mtab etab"><thead><tr><th>מדד</th><th>אצל החברה</th><th>צפוי בשלב</th><th></th><th>משקל</th></tr></thead>
-          <tbody>${dRow}${rows}</tbody></table></div>
-        ${cov}${lowc}
-        ${extra ? `<div class="xmetrics">${extra}</div>` : ''}
-      </div>`;
-  }
-
   function renderOverview(A) {
-    const L = A.latest, G = A.engine || {};
+    const L = A.latest, color = A.stage_color;
+    const off = A.stage === 'loss_slow' || A.stage === 'declining';
     const edges = (A.edges || []).map((e) => {
-      const col = A.stages[e.to] ? A.stages[e.to].color : C.muted;
-      const eta = e.eta ? `לפי המגמה: בעוד כ-${n(e.eta)} ${A.period_months === 12 ? 'שנים' : 'רבעונים'}` : '';
-      return `<div class="edgebox" style="border-inline-start-color:${col}"><b>על הסף: ${esc(e.title)} ← ${esc(e.to_he)} (Dickinson)${tipBtn('edge')}</b>
-        <div>${esc(e.text)}</div>${eta ? `<div class="eta">${eta}</div>` : ''}</div>`;
+      const col = A.stages[e.to] ? A.stages[e.to].color : color;
+      const eta = e.eta ? `לפי המגמה: בעוד כ-${n(e.eta)} ${A.period_months === 12 ? 'שנים' : 'רבעונים'}` : 'קרובה לסף – אין עדיין הערכת זמן';
+      return `<div class="edgebox" style="border-inline-start-color:${col}"><b>על הסף: ${esc(e.title)} ← ${esc(e.to_he)}${tipBtn('edge')}</b>
+        <div>${esc(e.text)}</div><div class="eta">${eta}</div></div>`;
     }).join('');
-
-    // שכבת הסרטון: מעבר לרווח נקי
-    const lastEv = (A.events || []).slice(-1)[0];
-    const recentEv = lastEv && (Date.now() - new Date(lastEv.event_date)) / 86400000 < 400;
-    const dvir = A.approaching_profit
-      ? `<span class="tag" style="color:${C.green}">מתקרבת לרווח נקי</span>`
-      : recentEv ? `<span class="tag" style="color:${C.green}">עברה לרווח נקי לאחרונה</span>` : '';
 
     const sc = A.scores || {};
     const scoreRows = [['growth', 'צמיחה'], ['profitability', 'רווחיות'], ['strength', 'חוסן פיננסי'], ['valuation', 'תמחור']].map(([k, lbl]) => {
@@ -436,38 +335,39 @@
       return `<div class="score"><span class="lbl">${lbl}</span><span class="bars">${bars}</span><span class="val num" style="color:${col}">${v}</span></div>`;
     }).join('');
 
-    // סיכון: מהמנוע (ביחס לשלב), ואם אין – מהחישוב הכללי
-    const ER = G.risk;
-    const risk = ER ? { score: ER.score, level: ER.level } : A.risk;
+    const risk = A.risk;
     const rcol = risk.score < 25 ? C.green : risk.score < 50 ? C.amber : C.red;
-    const negItems = ER
-      ? ER.flags.filter((f) => f.level !== 'info').map((f) => ({ text: f.text, pts: f.pts, high: f.level === 'high' }))
-      : A.risk.reasons.slice(1).map((r) => ({ text: r.text, pts: r.pts }));
-    const neg = negItems.map((r) => `<li><span class="ic" style="background:${C.red}">!</span><span>${numWrap(r.text)}</span><span class="p num" style="color:${C.red}">+${r.pts}</span></li>`).join('');
-    const posi = A.risk.positives.map((r) => `<li><span class="ic" style="background:${C.green}">✓</span><span>${esc(r.text)}</span><span class="p num" style="color:${C.green}"></span></li>`).join('');
+    const neg = risk.reasons.slice(1).map((r) => `<li><span class="ic" style="background:${C.red}">!</span><span>${esc(r.text)}</span><span class="p num" style="color:${C.red}">+${r.pts}</span></li>`).join('');
+    const posi = risk.positives.map((r) => `<li><span class="ic" style="background:${C.green}">✓</span><span>${esc(r.text)}</span><span class="p num" style="color:${C.green}">${r.pts}</span></li>`).join('');
+
     const name = A.name;
-    const story = (A.narrative || []).map((x) => `<p>${esc(x).replace(esc(name), `<bdi>${esc(name)}</bdi>`)}</p>`).join('');
-    const riskNote = ER ? `<div class="note">בסיס של ${n(ER.base)} לשלב "${esc(G.stage_he)}", ועוד הנקודות שבסימני האזהרה.${G.stage === 'shakeout' || G.stage === 'decline' ? ' בטלטלה ובדעיכה הסיכון תמיד לפחות בינוני.' : ''}</div>` : '';
+    const story = (A.narrative || []).map((s) => `<p>${esc(s).replace(esc(name), `<bdi>${esc(name)}</bdi>`)}</p>`).join('');
 
     let runway = '';
-    if (!bad(L.net_income_ttm) && L.net_income_ttm < 0 || (!bad(L.fcf_ttm) && L.fcf_ttm < 0)) {
+    if (['startup', 'startup_to_growth', 'growth_loss', 'loss_slow', 'declining'].includes(A.stage)) {
       const rf = A.runway.months_fcf, rn = A.runway.months_ni, be = A.breakeven;
       let beLine = '';
       if (be.trend === 'narrowing' && be.months) beLine = `<li>רווח נקי צפוי לפי המגמה: בעוד כ-<b>${n(be.months)} חודשים</b> – ${bad(rf) || be.months <= rf ? 'הקופה מספיקה עד אז' : 'הקופה לא מספיקה עד אז, צפוי גיוס'}</li>`;
       else if (be.trend === 'widening') beLine = '<li>ההפסדים מתרחבים – אין מגמה לרווח.</li>';
+      else if (be.trend === 'flat') beLine = '<li>ההפסדים יציבים – אין מגמה ברורה לרווח.</li>';
       runway = `<h3 class="h3" style="margin-top:22px">כמה זמן הקופה מחזיקה</h3><ul class="watch">
-        <li>לפי תזרים חופשי: <b>${A.runway.self_funded ? 'לא שורפת מזומן' : months(rf)}</b>${A.runway.self_funded ? '' : verdict('runway', rf)}</li>
-        ${bad(rn) ? '' : `<li>לפי הפסד נקי (השיטה מהסרטון): <b>${months(rn)}</b></li>`}${beLine}</ul>`;
+        <li>לפי תזרים חופשי (מדויק יותר): <b>${A.runway.self_funded ? 'לא שורפת מזומן' : months(rf)}</b>${A.runway.self_funded ? '' : verdict('runway', rf)}</li>
+        <li>לפי הפסד נקי (השיטה מהסרטון): <b>${months(rn)}</b></li>${beLine}</ul>`;
     }
 
     const asof = A.asof ? `<div class="asof">
         <span>הנתונים מבוססים על ${esc(A.asof.form_he)} (${n(esc(A.asof.form))}) לתקופה שהסתיימה ב-${dmy(A.asof.period_end)}, שהוגש ל-SEC ב-${dmy(A.asof.filed)}.
         ${A.asof.url ? `<a href="${esc(A.asof.url)}" target="_blank" rel="noopener">לדוח המקורי</a>` : ''}</span>
         <a href="#s-verify" class="vbadge" id="vbadge"></a></div>` : '';
-
     $('#s-overview').innerHTML = `${asof}
-      ${engineCard(A)}
-      ${dvir || edges ? `<div class="card" style="margin-top:18px">${dvir ? `<div style="margin-bottom:8px">${dvir}</div>` : ''}${edges ? `<div class="edges">${edges}</div>` : ''}</div>` : ''}
+      <div class="card trackcard">
+        <div class="track-head"><h2 style="color:${color}">${esc(A.stage_he)}</h2>
+          ${A.approaching_profit ? `<span class="tag" style="color:${C.green}">מתקרבת לרווח נקי</span>` : ''}</div>
+        ${trackHTML(A.stage, color, A.edges)}
+        ${off ? `<div class="offtrack">מחוץ למסלול הבריא – ${A.stage === 'loss_slow' ? 'הפסדית בלי צמיחה מספקת' : 'ההכנסות מתכווצות'}</div>` : ''}
+        <p class="lead" style="margin:6px 0 0">${esc(A.explain)}</p>
+        ${edges ? `<div class="edges">${edges}</div>` : ''}
+      </div>
       <div class="grid2" style="margin-top:28px">
         <div>
           <h2 class="h2">תמונת מצב</h2>
@@ -478,13 +378,14 @@
           </div>
         </div>
         <div>
-          <h2 class="h2">רמת סיכון ביחס לשלב${tipBtn('risk')}</h2>
+          <h2 class="h2">רמת סיכון${tipBtn('risk')}</h2>
           ${gaugeSVG(risk.score)}
-          <div class="gauge-label" style="color:${rcol};margin-top:6px">סיכון ${esc(risk.level)}</div>
-          ${riskNote}
+          <div class="gauge-label" style="color:${rcol};margin-top:6px">סיכון ${esc(risk.level)} ביחס לשלב</div>
           <h3 class="h3" style="margin-top:22px">ציונים${tipBtn('scores')}</h3>
           ${scoreRows}
           <div class="note">1–10, גבוה = טוב יותר. בתמחור: גבוה = זול יותר. החישוב שלנו, לא מדד רשמי.</div>
+          <h3 class="h3" style="margin-top:22px">מה לבדוק בשלב הזה</h3>
+          <ul class="watch">${(A.watch || []).map((w) => `<li>${esc(w)}</li>`).join('')}</ul>
           ${runway}
         </div>
       </div>`;
@@ -539,7 +440,7 @@
         </div>` : '<p class="muted">מחירי מניה לא זמינים כרגע.</p>'}
         <div class="chart" id="pxChart" ${hasPx ? '' : 'hidden'}></div>
         <div class="legend">${legend}</div>
-        <div class="note">הרקע צבוע לפי השלב במחזור החיים (Dickinson) שאובחן בכל רבעון, לפי הדוחות שפורסמו עד אז.</div>
+        <div class="note">הרקע צבוע לפי השלב שאובחן בכל רבעון, לפי הדוחות שפורסמו עד אז.</div>
       </div>`;
     if (!hasPx) return;
 
@@ -748,9 +649,9 @@
 
     $('#s-fin').innerHTML = `<h2>דוחות כספיים</h2>${table}
       <div class="fgrid">
-        <div class="fcard wide"><div class="fhead"><div><h3>תזרימי המזומנים – הבסיס למודל Dickinson</h3>
-            <div class="fsub">12 חודשים מתגלגלים. הצירוף של שלושת הסימנים קובע את השלב (הפס העליון).</div></div>
-            ${kpi(`${esc(A.stage_he)} <span class="num" style="font-weight:500">(${(L.pattern || '').split('').join(' ')})</span>`, '')}</div>
+        <div class="fcard wide"><div class="fhead"><div><h3>תזרימי המזומנים</h3>
+            <div class="fsub">12 חודשים מתגלגלים. הפס העליון: השלב שאובחן בכל רבעון.</div></div>
+            ${kpi(esc(A.stage_he), '')}</div>
           <div class="chart" id="cCF" style="height:340px"></div></div>
         <div class="fcard"><div class="fhead"><div><h3>הכנסות</h3><div class="fsub">${per}, וצמיחה שנתית ב-%</div></div>
             ${kpi(money(L.revenue_ttm, A.currency), bad(L.revenue_yoy) ? '' : `${pct(L.revenue_yoy)} בשנה`, cls(L.revenue_yoy))}</div>
@@ -962,39 +863,7 @@
         <td><div class="flinks">${links || '<span class="muted">—</span>'}</div></td>
         <td class="tag">${r.concepts.map(esc).join('<br>')}</td></tr>`;
     }).join('');
-    const signHe = (c) => (c === '+' ? '<span class="sign p">+</span>' : '<span class="sign m">−</span>');
-    const EM = A.engine_model || {}, G = A.engine || {};
-    const stKeys = Object.keys(EM.stages || {});
-    const prof = stKeys.length ? `<div class="tablewrap"><table class="fin mtab ptab"><thead><tr><th>מדד (משקל)</th>${stKeys.map((k) => `<th${G.stage === k ? ' class="hl"' : ''} style="color:${EM.stages[k].color}">${esc(EM.stages[k].he)}</th>`).join('')}</tr></thead><tbody>
-      <tr><td>תזרימים – Dickinson (${n('35%')})</td>${stKeys.map((k) => `<td${G.stage === k ? ' class="hl"' : ''}>${esc({ startup: 'סטארט-אפ', growth: 'צמיחה', profitable: 'בוגרת / צמיחה', value: 'בוגרת', shakeout: 'טלטלה', decline: 'דעיכה' }[k])}</td>`).join('')}</tr>
-      ${Object.keys(EM.expect || {}).map((m) => `<tr><td>${esc(EM.labels[m])} (${n(Math.round(EM.weights[m] * 100) + '%')})</td>${stKeys.map((k) => `<td${G.stage === k ? ' class="hl"' : ''}>${esc(EM.expect[m][k])}</td>`).join('')}</tr>`).join('')}
-      </tbody></table></div>` : '';
-    const lastPat = G.dickinson ? G.dickinson.path[G.dickinson.path.length - 1].pattern : A.latest.pattern;
-    const method = `<div class="card" style="margin-bottom:22px"><h3 class="h3">איך נקבע השלב</h3>
-      <div class="grid2 even" style="gap:28px">
-        <div>
-          <p><b>שכבה 1 – מודל Dickinson (2011).</b> מודל אקדמי שפורסם ב-The Accounting Review. לכל שנת כספים בודקים את הסימן של שלושת חלקי דוח תזרים המזומנים:
-          8 צירופים אפשריים, 5 שלבים. השלב של Dickinson הוא הנפוץ ב-3 השנים האחרונות (בתיקו – השנה האחרונה). השורה המודגשת היא הצירוף של השנה האחרונה.</p>
-          <div class="tablewrap"><table class="fin mtab"><thead><tr><th>פעילות שוטפת</th><th>השקעות</th><th>מימון</th><th>שלב</th></tr></thead><tbody>${(A.dickinson_table || []).map((r) => `<tr${r.pattern === lastPat ? ' class="hl"' : ''}>
-      <td>${signHe(r.pattern[0])}</td><td>${signHe(r.pattern[1])}</td><td>${signHe(r.pattern[2])}</td>
-      <td><span style="color:${A.stages[r.stage].color};font-weight:600">${esc(r.he)}</span></td></tr>`).join('')}</tbody></table></div>
-          <p class="note">ערך 0 נחשב שלילי. שתי התאמות שלנו: (1) מתזרים ההשקעות מנוטרלות קנייה ומכירה של ניירות ערך סחירים (לפי השינוי ביתרתם במאזן), כי זה ניהול של הקופה ולא השקעה בעסק.
-          (2) תזרים השקעות או מימון שקטן מ-3% מהתזרים הגדול נחשב "אין פעילות" (−), כי סימן של מספר זניח הוא רעש.</p>
-        </div>
-        <div>
-          <p><b>שכבה 2 – מדדים תומכים בסגנון Damodaran.</b> Damodaran מתאר מה מאפיין כל שלב: קצב צמיחה, היקף ההשקעות, התשואה על ההון, התזרים החופשי והחלוקה לבעלים.
-          כל מדד נותן נקודות לשלבים שהפרופיל שלהם מתאים לערך של החברה, לפי המשקלות. השלב עם הניקוד הגבוה מנצח, והביטחון הוא הפער מהמקום השני.
-          הספים הם כללי אצבע שלנו (Damodaran לא מפרסם ספים מספריים), ומרוכזים בקובץ הגדרות אחד לכיול.</p>
-          <p class="note">טלטלה ודעיכה מוצגות כאזהרה ולא כתחנה במסלול. חברות פיננסיות (בנקים, ביטוח, ברוקרים, קרנות נדל"ן) לא מסווגות – אצלן התזרימים לא מעידים על שלב.
-          <b>שכבה מהסרטון:</b> "מעבר לרווח נקי" – הרבעון שבו הרווח הנקי השנתי הפך לחיובי, ומה קרה למניה מאז.</p>
-        </div>
-      </div>
-      <h3 class="h3" style="margin-top:14px">הפרופיל הצפוי בכל שלב</h3>${prof}
-      <div class="note" style="margin-top:10px">מקורות:
-        <a href="https://doi.org/10.2308/accr-10130" target="_blank" rel="noopener">Dickinson, V. (2011). Cash Flow Patterns as a Proxy for Firm Life Cycle. The Accounting Review</a>;
-        <a href="https://pages.stern.nyu.edu/~adamodar/pdfiles/blog/corporatelifecycle.pdf" target="_blank" rel="noopener">Damodaran, A. The Corporate Life Cycle</a>.</div>
-    </div>`;
-    $('#s-verify').innerHTML = `<h2>המודל ואמינות הנתונים</h2>${method}
+    $('#s-verify').innerHTML = `<h2>אמינות הנתונים</h2>
       <div class="grid2">
         <div class="card"><h3 class="h3">בדיקות (${summary})</h3><ul class="checks">${checks}</ul></div>
         <div class="card"><h3 class="h3">איך זה עובד</h3>
