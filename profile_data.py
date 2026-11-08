@@ -39,6 +39,8 @@ STAT_KEYS = [
     "averageVolume", "sharesOutstanding", "grossMargins", "operatingMargins", "profitMargins", "returnOnEquity",
     "recommendationMean", "targetMeanPrice", "targetHighPrice", "targetLowPrice", "numberOfAnalystOpinions",
     "regularMarketPreviousClose", "currentPrice", "enterpriseToEbitda", "pegRatio",
+    # להשוואה מול נתוני ה-SEC (בדיקת אמינות)
+    "totalRevenue", "netIncomeToCommon", "totalCash", "totalDebt", "marketCap", "mostRecentQuarter",
 ]
 
 
@@ -62,6 +64,8 @@ def fetch_yahoo_profile(ticker: str) -> dict:
         ]:
             if info.get(src) not in (None, ""):
                 out[dst] = info[src]
+        if info.get("financialCurrency"):
+            out["financial_currency"] = info["financialCurrency"]
         stats = {}
         for k in STAT_KEYS:
             v = info.get(k)

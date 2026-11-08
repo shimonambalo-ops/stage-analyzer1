@@ -110,6 +110,8 @@ CONCEPTS: dict[str, list[tuple[str, str]]] = {
         ("ifrs-full", "CurrentPortionOfLongtermBorrowings"),
         ("ifrs-full", "ShorttermBorrowings"),
     ],
+    "assets": [("us-gaap", "Assets"), ("ifrs-full", "Assets")],
+    "liabilities": [("us-gaap", "Liabilities"), ("ifrs-full", "Liabilities")],
     "shares": [
         ("dei", "EntityCommonStockSharesOutstanding"),
         ("us-gaap", "CommonStockSharesOutstanding"),
@@ -123,7 +125,7 @@ CONCEPTS: dict[str, list[tuple[str, str]]] = {
 
 FLOW_ITEMS = ["revenue", "net_income", "op_income", "ocf", "capex", "sbc"]
 INSTANT_ITEMS = ["cash", "st_investments", "securities_total", "lt_securities",
-                 "debt_total", "debt_noncurrent", "debt_current", "shares"]
+                 "debt_total", "debt_noncurrent", "debt_current", "shares", "assets", "liabilities"]
 
 # חברת SPAC (חברת מעטפת שמיזגה אליה את החברה האמיתית): הדוחות שלפני המיזוג שייכים למעטפת
 TRUST_CONCEPTS = ["AssetsHeldInTrustNoncurrent", "AssetsHeldInTrustCurrent", "AssetsHeldInTrust"]
@@ -236,19 +238,20 @@ def _quarterly_from_duration(df: pd.DataFrame) -> pd.DataFrame:
     מחזיר DataFrame עם index=תאריך סוף רבעון ועמודות val, filed.
     """
     if df.empty or "start" not in df:
-        return pd.DataFrame(columns=["val", "filed"])
-    d = df.dropna(subset=["start"]).copy()
+        return pd.DataFrame(columns=["val", "filed", "accn", "form", "src_filed"])
+    d = _with_meta(df.dropna(subset=["start"]).copy())
     d["days"] = (d["end"] - d["start"]).dt.days
     d = d[(d["days"] >= 80) & (d["days"] <= 380)]
     # ערך: הדיווח האחרון לכל תקופה (תיקונים / הצגה מחדש). תאריך: הפרסום הראשון (מתי השוק ידע)
     first_filed = d.groupby(["start", "end"])["filed"].min()
     d = d.sort_values("filed").drop_duplicates(subset=["start", "end"], keep="last").copy()
+    d["src_filed"] = d["filed"]
     d["filed"] = [first_filed.loc[(a, b)] for a, b in zip(d["start"], d["end"])]
 
-    quarters: dict[pd.Timestamp, tuple[float, pd.Timestamp]] = {}
+    quarters: dict = {}
     direct = d[(d["days"] >= 80) & (d["days"] <= 100)]
     for _, r in direct.iterrows():
-        quarters[r["end"]] = (float(r["val"]), r["filed"])
+        quarters[r["end"]] = (float(r["val"]), r["filed"], r["accn"], r["form"], r["src_filed"])
 
     # הפרשים בין דיווחים מצטברים עם אותה תחילת שנה
     for start, g in d.groupby("start"):
@@ -258,12 +261,12 @@ def _quarterly_from_duration(df: pd.DataFrame) -> pd.DataFrame:
             if prev is not None:
                 gap = (r["end"] - prev["end"]).days
                 if 80 <= gap <= 100 and r["end"] not in quarters:
-                    quarters[r["end"]] = (float(r["val"]) - float(prev["val"]), r["filed"])
+                    quarters[r["end"]] = (float(r["val"]) - float(prev["val"]), r["filed"], r["accn"], r["form"], r["src_filed"])
             prev = r
 
     if not quarters:
-        return pd.DataFrame(columns=["val", "filed"])
-    out = pd.DataFrame.from_dict(quarters, orient="index", columns=["val", "filed"]).sort_index()
+        return pd.DataFrame(columns=["val", "filed", "accn", "form", "src_filed"])
+    out = pd.DataFrame.from_dict(quarters, orient="index", columns=["val", "filed", "accn", "form", "src_filed"]).sort_index()
     # איחוד תאריכי סוף קרובים (הפרש של ימים בודדים בין דוחות)
     out = out[~out.index.duplicated(keep="last")]
     return out
@@ -272,16 +275,17 @@ def _quarterly_from_duration(df: pd.DataFrame) -> pd.DataFrame:
 def _annual_from_duration(df: pd.DataFrame) -> pd.DataFrame:
     """סדרה שנתית (לחברות זרות שמגישות 20-F/40-F בלבד, בלי דוחות רבעוניים)."""
     if df.empty or "start" not in df:
-        return pd.DataFrame(columns=["val", "filed"])
-    d = df.dropna(subset=["start"]).copy()
+        return pd.DataFrame(columns=["val", "filed", "accn", "form", "src_filed"])
+    d = _with_meta(df.dropna(subset=["start"]).copy())
     d["days"] = (d["end"] - d["start"]).dt.days
     d = d[(d["days"] >= 350) & (d["days"] <= 380)]
     if d.empty:
-        return pd.DataFrame(columns=["val", "filed"])
+        return pd.DataFrame(columns=["val", "filed", "accn", "form", "src_filed"])
     first_filed = d.groupby("end")["filed"].min()
     d = d.sort_values("filed").drop_duplicates(subset=["end"], keep="last").set_index("end").sort_index()
+    d["src_filed"] = d["filed"]
     d["filed"] = first_filed.reindex(d.index)
-    return d[["val", "filed"]]
+    return d[["val", "filed", "accn", "form", "src_filed"]]
 
 
 def _series(df: pd.DataFrame, kind: str, sum_classes: bool = False) -> pd.DataFrame:
@@ -292,14 +296,23 @@ def _series(df: pd.DataFrame, kind: str, sum_classes: bool = False) -> pd.DataFr
     return _instant_series(df, sum_classes)
 
 
+def _with_meta(df: pd.DataFrame) -> pd.DataFrame:
+    for c in ("accn", "form"):
+        if c not in df:
+            df[c] = None
+    return df
+
+
 def _instant_series(df: pd.DataFrame, sum_classes: bool = False) -> pd.DataFrame:
     if df.empty:
-        return pd.DataFrame(columns=["val", "filed"])
-    if sum_classes and "accn" in df:
+        return pd.DataFrame(columns=["val", "filed", "accn", "form", "src_filed"])
+    df = _with_meta(df)
+    if sum_classes and df["accn"].notna().any():
         # מספר מניות בעמוד השער מדווח לכל סוג מניה בנפרד (למשל Class A + Class B) – מחברים
-        df = df.groupby(["end", "accn"], as_index=False).agg(val=("val", "sum"), filed=("filed", "max"))
-    d = df.sort_values("filed").drop_duplicates(subset=["end"], keep="last")
-    d = d.set_index("end")[["val", "filed"]].sort_index()
+        df = df.groupby(["end", "accn"], as_index=False).agg(val=("val", "sum"), filed=("filed", "max"), form=("form", "last"))
+    d = df.sort_values("filed").drop_duplicates(subset=["end"], keep="last").copy()
+    d["src_filed"] = d["filed"]
+    d = d.set_index("end")[["val", "filed", "accn", "form", "src_filed"]].sort_index()
     return d
 
 
@@ -356,6 +369,8 @@ class CompanyData:
     currency: str = "USD"
     period_months: int = 3           # 3 = רבעוני, 12 = שנתי בלבד (חברות זרות)
     spac_cutoff: object = None       # מועד ההגשה האחרון של חברת ה-SPAC (אם רלוונטי)
+    provenance: dict = field(default_factory=dict)   # item → DataFrame (index=end; accn, form, src_filed)
+    annual: dict = field(default_factory=dict)       # item → סדרה שנתית מדוחות 10-K (לבדיקת עקביות)
     concepts_used: dict = field(default_factory=dict)
     prices: pd.Series | None = None  # מחיר סגירה יומי
     market_cap: float | None = None
@@ -389,6 +404,7 @@ def build_company_data(facts: dict, ticker: str, name: str, cik: int) -> Company
         )
 
     flows = {}
+    prov = {}
     filed_any = None
     for item in FLOW_ITEMS:
         res = _merge_concepts(facts, item, flow_kind)
@@ -397,6 +413,7 @@ def build_company_data(facts: dict, ticker: str, name: str, cik: int) -> Company
         s, unit, concept = res
         flows[item] = s["val"]
         used[item] = concept
+        prov[item] = s[["accn", "form", "src_filed"]]
         if item in ("revenue", "net_income"):
             currency = unit if unit and unit != "shares" else currency
             filed_any = s["filed"] if filed_any is None else filed_any.combine_first(s["filed"])
@@ -419,6 +436,7 @@ def build_company_data(facts: dict, ticker: str, name: str, cik: int) -> Company
         s, unit, concept = res
         inst[item] = s["val"]
         used[item] = concept
+        prov[item] = s[["accn", "form", "src_filed"]]
     b = pd.DataFrame(inst).sort_index()
 
     # חוב: סך חוב אם קיים ועדכני, אחרת לטווח ארוך + שוטף
@@ -462,7 +480,15 @@ def build_company_data(facts: dict, ticker: str, name: str, cik: int) -> Company
     if currency != "USD":
         warnings.append(f"הדוחות מדווחים ב-{currency}. השוואות לשווי שוק בדולרים עלולות להיות לא מדויקות.")
 
+    annual = {}
+    if flow_kind == "flow":
+        for item in ("revenue", "net_income"):
+            res_a = _merge_concepts(facts, item, "annual")
+            if res_a is not None and used.get(item) == res_a[2]:
+                annual[item] = res_a[0]["val"]
+
     return CompanyData(
+        provenance=prov, annual=annual,
         ticker=ticker, name=name, cik=cik, quarterly=q, balance=b,
         currency=currency, period_months=period_months, spac_cutoff=cutoff, concepts_used=used, warnings=warnings,
     )

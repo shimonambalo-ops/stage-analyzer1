@@ -16,6 +16,7 @@ import analysis
 import news_data
 import profile_data
 import sec_data
+import verify
 
 UA = os.environ.get("SEC_USER_AGENT") or sec_data.DEFAULT_UA
 
@@ -94,6 +95,20 @@ def _yearly_snapshots(m: pd.DataFrame, n: int = 5):
     return rows
 
 
+def _asof_info(data, dg):
+    """על איזה דוח מבוססים הנתונים – להצגה בראש העמוד."""
+    qe = dg.latest.get("quarter_end")
+    p = data.provenance.get("revenue") if "revenue" in data.provenance else data.provenance.get("net_income")
+    if qe is None or p is None or p.empty:
+        return None
+    row = p[p.index <= qe + pd.Timedelta(days=15)].tail(1)
+    if row.empty:
+        return None
+    r = row.iloc[0]
+    return {"period_end": qe, "form": r["form"], "form_he": verify.FORM_HE.get(r["form"], r["form"]),
+            "filed": r["src_filed"], "url": verify.filing_url(data.cik, r["accn"]), "period_months": data.period_months}
+
+
 def analyze(ticker: str) -> dict:
     ticker = ticker.strip().upper()
     tm = ticker_map()
@@ -160,6 +175,9 @@ def analyze(ticker: str) -> dict:
         "yearly": _yearly_snapshots(m),
         "stages": {k: {"he": v["he"], "color": v["color"]} for k, v in analysis.STAGES.items()},
         "concepts": data.concepts_used,
+        "checks": verify.checks(data, dg),
+        "sources": verify.sources(data, dg),
+        "asof": _asof_info(data, dg),
         "updated": datetime.utcnow().strftime("%Y-%m-%dT%H:%MZ"),
     })
 
@@ -208,6 +226,7 @@ def extras(ticker: str, cik: int = 0, name: str = "") -> dict:
         },
         "next_report": nxt,
         "stats": prof.get("stats") or {},
+        "financial_currency": prof.get("financial_currency"),
         "recommendation": prof.get("recommendation"),
         "news": news,
         "filings": fil,

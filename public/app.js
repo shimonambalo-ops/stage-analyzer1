@@ -12,6 +12,55 @@
     value: 4, value_to_growth: 3.5, loss_slow: 1, declining: 4, unknown: 0 };
   const REC_HE = { strong_buy: 'קנייה חזקה', buy: 'קנייה', hold: 'החזק', underperform: 'תשואת חסר', sell: 'מכירה', strong_sell: 'מכירה חזקה', none: '—' };
 
+  const EXPLAIN = {
+    mcap: 'שווי כל המניות של החברה בשוק: מחיר המניה כפול מספר המניות.',
+    pe: 'מחיר המניה חלקי הרווח למניה ב-12 החודשים האחרונים – כמה שנות רווח משלמים על המניה. אין לו משמעות כשהחברה מפסידה.',
+    fpe: 'כמו מכפיל רווח, אבל לפי תחזית הרווח של האנליסטים לשנה הקרובה.',
+    ps: 'שווי השוק חלקי ההכנסות השנתיות. שימושי במיוחד בחברות צמיחה שעדיין מפסידות.',
+    pfcf: 'שווי השוק חלקי התזרים החופשי השנתי – כמה שנים של מזומן פנוי משלמים על החברה.',
+    pb: 'שווי השוק חלקי ההון העצמי בספרים.',
+    eps: 'הרווח הנקי השנתי חלקי מספר המניות.',
+    div: 'הדיבידנד השנתי כאחוז ממחיר המניה.',
+    rev: 'סך ההכנסות ב-12 החודשים האחרונים (4 רבעונים), והשינוי לעומת 12 החודשים שלפניהם.',
+    ni: 'מה שנשאר מההכנסות אחרי כל ההוצאות, הריבית והמיסים, ב-12 החודשים האחרונים.',
+    nm: 'רווח נקי חלקי הכנסות: כמה סנטים של רווח נשארים מכל דולר הכנסה.',
+    gm: 'הכנסות פחות עלות המכר, חלקי הכנסות – כמה רווחי המוצר עצמו, לפני הוצאות פיתוח, שיווק והנהלה.',
+    roe: 'רווח נקי חלקי ההון העצמי: כמה החברה מרוויחה על הכסף של בעלי המניות.',
+    fcf: 'המזומן שהפעילות מייצרת, פחות השקעות ברכוש קבוע. שלילי = החברה שורפת מזומנים.',
+    liquid: 'מזומן, פיקדונות וניירות ערך סחירים (בעיקר אג"ח) – הכסף שזמין לחברה.',
+    debt: 'הלוואות ואג"ח שהחברה גייסה, כולל אג"ח להמרה. לא כולל התחייבויות חכירה.',
+    beta: 'כמה המניה זזה ביחס לשוק כולו. 1 = כמו השוק, 2 = פי שניים מהשוק.',
+    vol: 'סטיית התקן השנתית של התשואות היומיות בשנה האחרונה. מעל 50% = מניה תנודתית מאוד.',
+    avgvol: 'ממוצע המניות שנסחרות ביום.',
+    shares: 'מספר המניות של החברה, לפי הדוח האחרון.',
+    dil: 'בכמה גדל מספר המניות בשנה האחרונה. גידול = כל מניה מחזיקה חלק קטן יותר מהחברה.',
+    short: 'אחוז מהמניות הצפות שמושאלות למכירה בחסר – כלומר הימורים על ירידה.',
+    inst: 'אחוז מהמניות שמוחזקות בידי גופים מוסדיים: קרנות, בנקים וחברות ביטוח.',
+    insider: 'אחוז מהמניות שמוחזקות בידי מנהלים, מייסדים ובעלי עניין.',
+    risk: 'ציון 0–100 שמשלב את השלב של החברה, הקופה, החוב, הדילול, מגמת ההפסדים, התמחור והתנודתיות. הפירוט ב"סימני אזהרה" ו"נקודות חוזק".',
+    scores: 'ציונים שלנו בסולם 1–10, לפי הנתונים מהדוחות. צמיחה – קצב גידול ההכנסות; רווחיות – שולי רווח ותזרים; חוסן – קופה, חוב ודילול; תמחור – מכפילים (גבוה = זול).',
+    edge: 'החברה קרובה לגבול של שלב אחר ונעה לכיוונו, לפי המגמה ב-4 הרבעונים האחרונים.',
+  };
+  const tipBtn = (key) => (EXPLAIN[key] ? `<button type="button" class="i" data-tip="${key}" aria-label="הסבר">?</button>` : '');
+  function verdict(kind, v) {
+    if (v === null || v === undefined || Number.isNaN(v)) return '';
+    const V = (t, c) => `<span class="verdict ${c}">${t}</span>`;
+    switch (kind) {
+      case 'pe': return v < 15 ? V('זול', 'g') : v < 25 ? V('סביר', 'n') : v < 40 ? V('יקר', 'a') : V('יקר מאוד', 'r');
+      case 'ps': return v < 2 ? V('זול', 'g') : v < 6 ? V('סביר', 'n') : v < 15 ? V('יקר', 'a') : V('יקר מאוד', 'r');
+      case 'pfcf': return v < 15 ? V('זול', 'g') : v < 30 ? V('סביר', 'n') : v < 60 ? V('יקר', 'a') : V('יקר מאוד', 'r');
+      case 'dil': return v > 0.08 ? V('דילול כבד', 'r') : v > 0.03 ? V('דילול', 'a') : v < -0.01 ? V('רכישה עצמית', 'g') : V('יציב', 'n');
+      case 'vol': return v > 0.6 ? V('תנודתית מאוד', 'r') : v > 0.35 ? V('תנודתית', 'a') : V('רגילה', 'n');
+      case 'nm': return v < 0 ? V('הפסדית', 'r') : v < 0.05 ? V('דקים', 'a') : v < 0.15 ? V('סבירים', 'n') : V('גבוהים', 'g');
+      case 'growth': return !Number.isFinite(v) ? V('מאפס', 'g') : v < 0 ? V('ירידה', 'r') : v < 0.08 ? V('איטית', 'n') : v < 0.2 ? V('מתונה', 'n') : V('מהירה', 'g');
+      case 'short': return v > 0.15 ? V('גבוה מאוד', 'r') : v > 0.08 ? V('גבוה', 'a') : '';
+      case 'runway': return v < 12 ? V('קצר', 'r') : v < 24 ? V('בינוני', 'a') : V('ארוך', 'g');
+      case 'fcf': return v < 0 ? V('שורפת מזומן', 'r') : V('מייצרת מזומן', 'g');
+      case 'beta': return v > 1.5 ? V('תנודתית מהשוק', 'a') : v < 0.8 ? V('יציבה מהשוק', 'n') : '';
+      default: return '';
+    }
+  }
+
   const $ = (s, el = document) => el.querySelector(s);
   const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
   const bad = (x) => x === null || x === undefined || Number.isNaN(x) || !Number.isFinite(x);
@@ -190,7 +239,7 @@
     $('#status').innerHTML = '';
     $('#mast').innerHTML = `<div class="mast"><div class="skel" style="width:64px;height:64px;background-color:#2a3a60"></div>
       <div><div style="font:900 2rem var(--serif)">${esc(t)}</div><div class="sub" style="color:#AEB9C9">מושך את הדוחות מ-SEC…</div></div></div>`;
-    ['#s-overview', '#s-chart', '#s-stats', '#s-fin', '#s-news', '#s-profile'].forEach((s) => ($(s).innerHTML = `<div class="skel" style="height:180px"></div>`));
+    ['#s-overview', '#s-chart', '#s-stats', '#s-fin', '#s-news', '#s-profile', '#s-verify'].forEach((s) => ($(s).innerHTML = `<div class="skel" style="height:180px"></div>`));
 
     const pA = fetch(`/api/analyze?t=${encodeURIComponent(t)}`).then((r) => r.json()).catch(() => ({ error: 'לא הצלחתי להתחבר לשרת. נסה שוב בעוד רגע.' }));
     const pE = fetch(`/api/extras?t=${encodeURIComponent(t)}`).then((r) => r.json()).catch(() => ({}));
@@ -200,7 +249,7 @@
     if (A.error) {
       $('#mast').innerHTML = `<div class="error-box"><h2 class="h3">${esc(t)}</h2><p>${esc(A.error)}</p>
         <p class="muted">אפשר לנסות טיקר אחר, או לבחור מהרשימה שנפתחת בזמן ההקלדה.</p></div>`;
-      ['#s-overview', '#s-chart', '#s-stats', '#s-fin', '#s-news', '#s-profile'].forEach((s) => ($(s).innerHTML = ''));
+      ['#s-overview', '#s-chart', '#s-stats', '#s-fin', '#s-news', '#s-profile', '#s-verify'].forEach((s) => ($(s).innerHTML = ''));
       $('#subnav').hidden = true;
       return;
     }
@@ -211,6 +260,7 @@
     renderChart(A);
     renderStats(A, null);
     renderFin(A);
+    renderVerify(A, null);
     $('#s-news').innerHTML = `<h2>עדכונים אחרונים</h2><div class="skel" style="height:220px"></div>`;
     $('#s-profile').innerHTML = `<h2>על החברה</h2><div class="skel" style="height:160px"></div>`;
 
@@ -220,6 +270,7 @@
     renderStats(A, E);
     renderNews(A, E);
     renderProfile(A, E);
+    renderVerify(A, E);
     initSubnav();
   }
 
@@ -271,7 +322,7 @@
     const edges = (A.edges || []).map((e) => {
       const col = A.stages[e.to] ? A.stages[e.to].color : color;
       const eta = e.eta ? `לפי המגמה: בעוד כ-${n(e.eta)} ${A.period_months === 12 ? 'שנים' : 'רבעונים'}` : 'קרובה לסף – אין עדיין הערכת זמן';
-      return `<div class="edgebox" style="border-inline-start-color:${col}"><b>על הסף: ${esc(e.title)} ← ${esc(e.to_he)}</b>
+      return `<div class="edgebox" style="border-inline-start-color:${col}"><b>על הסף: ${esc(e.title)} ← ${esc(e.to_he)}${tipBtn('edge')}</b>
         <div>${esc(e.text)}</div><div class="eta">${eta}</div></div>`;
     }).join('');
 
@@ -300,11 +351,15 @@
       else if (be.trend === 'widening') beLine = '<li>ההפסדים מתרחבים – אין מגמה לרווח.</li>';
       else if (be.trend === 'flat') beLine = '<li>ההפסדים יציבים – אין מגמה ברורה לרווח.</li>';
       runway = `<h3 class="h3" style="margin-top:22px">כמה זמן הקופה מחזיקה</h3><ul class="watch">
-        <li>לפי תזרים חופשי (מדויק יותר): <b>${A.runway.self_funded ? 'לא שורפת מזומן' : months(rf)}</b></li>
+        <li>לפי תזרים חופשי (מדויק יותר): <b>${A.runway.self_funded ? 'לא שורפת מזומן' : months(rf)}</b>${A.runway.self_funded ? '' : verdict('runway', rf)}</li>
         <li>לפי הפסד נקי (השיטה מהסרטון): <b>${months(rn)}</b></li>${beLine}</ul>`;
     }
 
-    $('#s-overview').innerHTML = `
+    const asof = A.asof ? `<div class="asof">
+        <span>הנתונים מבוססים על ${esc(A.asof.form_he)} (${n(esc(A.asof.form))}) לתקופה שהסתיימה ב-${dmy(A.asof.period_end)}, שהוגש ל-SEC ב-${dmy(A.asof.filed)}.
+        ${A.asof.url ? `<a href="${esc(A.asof.url)}" target="_blank" rel="noopener">לדוח המקורי</a>` : ''}</span>
+        <a href="#s-verify" class="vbadge" id="vbadge"></a></div>` : '';
+    $('#s-overview').innerHTML = `${asof}
       <div class="card trackcard">
         <div class="track-head"><h2 style="color:${color}">${esc(A.stage_he)}</h2>
           ${A.approaching_profit ? `<span class="tag" style="color:${C.green}">מתקרבת לרווח נקי</span>` : ''}</div>
@@ -323,10 +378,10 @@
           </div>
         </div>
         <div>
-          <h2 class="h2">רמת סיכון</h2>
+          <h2 class="h2">רמת סיכון${tipBtn('risk')}</h2>
           ${gaugeSVG(risk.score)}
           <div class="gauge-label" style="color:${rcol};margin-top:6px">סיכון ${esc(risk.level)} ביחס לשלב</div>
-          <h3 class="h3" style="margin-top:22px">ציונים</h3>
+          <h3 class="h3" style="margin-top:22px">ציונים${tipBtn('scores')}</h3>
           ${scoreRows}
           <div class="note">1–10, גבוה = טוב יותר. בתמחור: גבוה = זול יותר. החישוב שלנו, לא מדד רשמי.</div>
           <h3 class="h3" style="margin-top:22px">מה לבדוק בשלב הזה</h3>
@@ -413,38 +468,38 @@
   function renderStats(A, E) {
     const L = A.latest, S = (E && E.stats) || {};
     const loading = E === null;
-    const kv = (k, v) => `<div class="kv"><span>${k}</span><span>${v}</span></div>`;
+    const kv = (k, v, tip, vd = '') => `<div class="kv"><span>${k}${tipBtn(tip)}</span><span>${v}${vd}</span></div>`;
     const ys = (x) => (loading ? '<span class="skel" style="display:inline-block;width:60px;height:14px"></span>' : x);
     const dil = L.dilution_yoy;
     const valuation = [
-      kv('שווי שוק', money(A.market_cap)),
-      kv('מכפיל רווח (P/E)', bad(L.pe) ? 'אין רווח' : num(L.pe)),
-      kv('מכפיל רווח עתידי', ys(num(S.forwardPE))),
-      kv('מכפיל מכירות (P/S)', num(L.ps)),
-      kv('מכפיל תזרים (P/FCF)', num(L.pfcf)),
-      kv('מכפיל הון (P/B)', ys(num(S.priceToBook))),
-      kv('רווח למניה (EPS)', ys(bad(S.trailingEps) ? '—' : n((S.trailingEps < 0 ? '-$' : '$') + Math.abs(S.trailingEps).toFixed(2)))),
-      kv('תשואת דיבידנד', ys(bad(S.dividendYield) || !S.dividendYield ? 'אין' : pct(S.dividendYield, false))),
+      kv('שווי שוק', money(A.market_cap), 'mcap'),
+      kv('מכפיל רווח (P/E)', bad(L.pe) ? 'אין רווח' : num(L.pe), 'pe', verdict('pe', L.pe)),
+      kv('מכפיל רווח עתידי', ys(num(S.forwardPE)), 'fpe', loading ? '' : verdict('pe', S.forwardPE)),
+      kv('מכפיל מכירות (P/S)', num(L.ps), 'ps', verdict('ps', L.ps)),
+      kv('מכפיל תזרים (P/FCF)', num(L.pfcf), 'pfcf', verdict('pfcf', L.pfcf)),
+      kv('מכפיל הון (P/B)', ys(num(S.priceToBook)), 'pb'),
+      kv('רווח למניה (EPS)', ys(bad(S.trailingEps) ? '—' : n((S.trailingEps < 0 ? '-$' : '$') + Math.abs(S.trailingEps).toFixed(2))), 'eps'),
+      kv('תשואת דיבידנד', ys(bad(S.dividendYield) || !S.dividendYield ? 'אין' : pct(S.dividendYield, false)), 'div'),
     ].join('');
     const health = [
-      kv('הכנסות, 12 חודשים', `${money(L.revenue_ttm, A.currency)} <span class="${cls(L.revenue_yoy)}" style="font-weight:500">${pct(L.revenue_yoy)}</span>`),
-      kv('רווח נקי, 12 חודשים', money(L.net_income_ttm, A.currency)),
-      kv('שולי רווח נקי', pct(L.net_margin_ttm, false)),
-      kv('שולי רווח גולמי', ys(pct(S.grossMargins, false))),
-      kv('תשואה על ההון (ROE)', ys(pct(S.returnOnEquity, false))),
-      kv('תזרים חופשי, 12 חודשים', money(L.fcf_ttm, A.currency)),
-      kv('מזומן וניירות ערך', money(L.liquid, A.currency)),
-      kv('חוב פיננסי', money(L.debt, A.currency)),
+      kv('הכנסות, 12 חודשים', `${money(L.revenue_ttm, A.currency)} <span class="${cls(L.revenue_yoy)}" style="font-weight:500">${pct(L.revenue_yoy)}</span>`, 'rev', verdict('growth', L.revenue_yoy)),
+      kv('רווח נקי, 12 חודשים', money(L.net_income_ttm, A.currency), 'ni'),
+      kv('שולי רווח נקי', pct(L.net_margin_ttm, false), 'nm', verdict('nm', L.net_margin_ttm)),
+      kv('שולי רווח גולמי', ys(pct(S.grossMargins, false)), 'gm'),
+      kv('תשואה על ההון (ROE)', ys(pct(S.returnOnEquity, false)), 'roe'),
+      kv('תזרים חופשי, 12 חודשים', money(L.fcf_ttm, A.currency), 'fcf', verdict('fcf', L.fcf_ttm)),
+      kv('מזומן וניירות ערך', money(L.liquid, A.currency), 'liquid'),
+      kv('חוב פיננסי', money(L.debt, A.currency), 'debt'),
     ].join('');
     const trading = [
-      kv('בטא', ys(num(S.beta, 2))),
-      kv('תנודתיות שנתית', pct(L.volatility, false)),
-      kv('מחזור יומי ממוצע', ys(big(S.averageVolume))),
-      kv('מניות במחזור', big(L.shares)),
-      kv('דילול שנתי', `<span class="${bad(dil) ? '' : dil > 0.01 ? 'neg' : dil < -0.01 ? 'pos' : ''}">${pct(dil)}</span>`),
-      kv('שורט מהמניות הצפות', ys(pct(S.shortPercentOfFloat, false))),
-      kv('החזקת מוסדיים', ys(pct(S.heldPercentInstitutions, false))),
-      kv('החזקת בעלי עניין', ys(pct(S.heldPercentInsiders, false))),
+      kv('בטא', ys(num(S.beta, 2)), 'beta', loading ? '' : verdict('beta', S.beta)),
+      kv('תנודתיות שנתית', pct(L.volatility, false), 'vol', verdict('vol', L.volatility)),
+      kv('מחזור יומי ממוצע', ys(big(S.averageVolume)), 'avgvol'),
+      kv('מניות במחזור', big(L.shares), 'shares'),
+      kv('דילול שנתי', pct(dil), 'dil', verdict('dil', dil)),
+      kv('שורט מהמניות הצפות', ys(pct(S.shortPercentOfFloat, false)), 'short', loading ? '' : verdict('short', S.shortPercentOfFloat)),
+      kv('החזקת מוסדיים', ys(pct(S.heldPercentInstitutions, false)), 'inst'),
+      kv('החזקת בעלי עניין', ys(pct(S.heldPercentInsiders, false)), 'insider'),
     ].join('');
 
     let analyst = '';
@@ -471,6 +526,7 @@
       </div>`;
     }
     $('#s-stats').innerHTML = `<h2>נתונים מרכזיים</h2>
+      <div class="note" style="margin:-6px 0 10px">B = מיליארד, M = מיליון. לחיצה על ? ליד נתון מסבירה מה הוא אומר. התוויות הצבעוניות הן הערכה כללית, לא המלצה.</div>
       <div class="card"><div class="stats">
         <div><h3>שווי ומכפילים</h3>${valuation}</div>
         <div><h3>רווחיות וחוסן</h3>${health}</div>
@@ -598,6 +654,107 @@
       <div class="note" style="margin-top:14px">עודכן: ${esc(A.updated)} (UTC). דוחות כספיים מתעדכנים בכל פרסום דוח רבעוני.</div>`;
   }
 
+
+  // ---------------- אמינות הנתונים ----------------
+  function crossChecks(A, E) {
+    if (!E) return [{ id: 'x', title: 'השוואה מול Yahoo Finance', status: 'info', detail: 'טוען נתונים להשוואה…' }];
+    const S = E.stats || {}, L = A.latest;
+    if (A.currency !== 'USD' || (E.financial_currency && E.financial_currency !== 'USD')) {
+      return [{ id: 'x', title: 'השוואה מול Yahoo Finance', status: 'info', detail: 'לא בוצעה – הדוחות מדווחים במטבע שאינו דולר.' }];
+    }
+    if (!Object.keys(S).length) return [{ id: 'x', title: 'השוואה מול Yahoo Finance', status: 'info', detail: 'נתוני Yahoo לא זמינים כרגע להשוואה.' }];
+    let lag = '';
+    if (S.mostRecentQuarter && L.quarter_end) {
+      const yq = new Date(S.mostRecentQuarter * 1000), oq = new Date(L.quarter_end);
+      if (Math.abs(yq - oq) / 86400000 > 45) lag = ` Yahoo מעודכן לרבעון שהסתיים ב-${yq.toLocaleDateString('he-IL')}, לכן פער מסוים צפוי.`;
+    }
+    const rows = [];
+    const cmp = (title, ours, theirs, okTol, warnTol, note = '', scale = null) => {
+      if (bad(ours) || bad(theirs)) return;
+      const base = Math.max(Math.abs(ours), Math.abs(theirs), scale || 0) || 1;
+      const diff = Math.abs(ours - theirs) / base;
+      const st = diff <= okTol ? 'ok' : diff <= warnTol ? 'warn' : 'fail';
+      rows.push({ id: 'x-' + title, title: `${title}: תואם ל-Yahoo Finance`, status: lag && st !== 'ok' ? 'info' : st,
+        detail: `SEC: ${plain(money(ours))}, Yahoo: ${plain(money(theirs))} (פער ${(diff * 100).toFixed(1)}%).${note}${st !== 'ok' ? lag : ''}` });
+    };
+    cmp('הכנסות 12 חודשים', L.revenue_ttm, S.totalRevenue, 0.03, 0.10);
+    cmp('רווח נקי 12 חודשים', L.net_income_ttm, S.netIncomeToCommon, 0.05, 0.15, '', Math.abs(L.revenue_ttm || 0) * 0.05);
+    const ourCash = (L.cash || 0) + (L.st_investments || 0);
+    if (ourCash) cmp('מזומן והשקעות קצרות', ourCash, S.totalCash, 0.10, 0.25, ' Yahoo לא כולל ניירות ערך לטווח ארוך.');
+    if (!bad(L.shares) && !bad(S.sharesOutstanding)) {
+      const d = Math.abs(L.shares - S.sharesOutstanding) / Math.max(L.shares, S.sharesOutstanding);
+      rows.push({ id: 'x-sh', title: 'מספר מניות: תואם ל-Yahoo Finance', status: d <= 0.03 ? 'ok' : d <= 0.10 ? 'warn' : 'info',
+        detail: `SEC: ${big(L.shares).replace(/<[^>]+>/g, '')}, Yahoo: ${big(S.sharesOutstanding).replace(/<[^>]+>/g, '')} (פער ${(d * 100).toFixed(1)}%). פער קטן נובע לרוב מסוגי מניות שונים או ממועד הספירה.` });
+    }
+    return rows.length ? rows : [{ id: 'x', title: 'השוואה מול Yahoo Finance', status: 'info', detail: 'אין מספיק נתונים להשוואה.' }];
+  }
+
+  const plain = (h) => String(h).replace(/<[^>]+>/g, '');
+
+  function renderVerify(A, E) {
+    const all = (A.checks || []).concat(crossChecks(A, E));
+    const scored = all.filter((c) => c.status !== 'info');
+    const okN = scored.filter((c) => c.status === 'ok').length;
+    const fails = scored.filter((c) => c.status === 'fail').length;
+    const warns = scored.filter((c) => c.status === 'warn').length;
+    const level = fails ? 'fail' : warns ? 'warn' : 'ok';
+    const icon = { ok: '✓', warn: '!', fail: '✕', info: 'i' };
+    const summary = level === 'ok' ? `כל ${scored.length} הבדיקות עברו` : `${okN} מתוך ${scored.length} בדיקות עברו`;
+    const vb = $('#vbadge');
+    if (vb) { vb.className = `vbadge ${level}`; vb.innerHTML = `${icon[level]} אימות נתונים: ${summary}`; }
+
+    const checks = all.map((c) => `<li><span class="st ${c.status}">${icon[c.status]}</span><div><b>${esc(c.title)}</b><span class="d">${esc(c.detail)}</span></div></li>`).join('');
+    const src = (A.sources || []).map((r) => {
+      const isMoney = r.key !== 'shares';
+      const val = isMoney ? money(r.value, A.currency) : big(r.value);
+      const links = r.filings.slice(0, 4).map((f) => `<a href="${esc(f.url)}" target="_blank" rel="noopener" title="${esc(f.form_he)}, הוגש ${esc(f.filed)}">${n(esc(f.form))} ${dmy(f.period_end)}</a>`).join('');
+      return `<tr><td>${esc(r.label)}<div class="how">${esc(r.how)}</div></td><td>${val}</td>
+        <td><div class="flinks">${links || '<span class="muted">—</span>'}</div></td>
+        <td class="tag">${r.concepts.map(esc).join('<br>')}</td></tr>`;
+    }).join('');
+    $('#s-verify').innerHTML = `<h2>אמינות הנתונים</h2>
+      <div class="grid2">
+        <div class="card"><h3 class="h3">בדיקות (${summary})</h3><ul class="checks">${checks}</ul></div>
+        <div class="card"><h3 class="h3">איך זה עובד</h3>
+          <ul class="watch">
+            <li>המספרים מגיעים ישירות מהדוחות הרשמיים שהחברה הגישה ל-SEC, בפורמט XBRL – לא מאתר צד שלישי.</li>
+            <li>בדיקות פנימיות: שהנתונים עדכניים, שאין רבעונים חסרים או שליליים, ושהקופה והחוב סבירים ביחס למאזן.</li>
+            <li>בדיקה חיצונית: השוואה למספרים של Yahoo Finance, שמגיעים ממקור נתונים אחר.</li>
+            <li>לכל נתון בטבלה למטה יש קישור לדוח המקורי ב-SEC, כדי שתוכל לבדוק בעצמך.</li>
+          </ul></div>
+      </div>
+      <div class="card" style="margin-top:22px"><h3 class="h3">מאיפה כל מספר מגיע</h3>
+        <div class="tablewrap"><table class="fin src"><thead><tr><th>נתון</th><th>ערך</th><th>הדוחות</th><th>השדה בדוח (XBRL)</th></tr></thead><tbody>${src}</tbody></table></div>
+        <div class="howto">איך לבדוק בעצמך: לוחצים על דוח, נפתח עמוד הדוח ב-SEC. פותחים את המסמך הראשי (הקובץ הראשון ברשימה) ומחפשים בו (Ctrl+F) את המספר או את שם הסעיף,
+        למשל "Total revenue" או "Cash and cash equivalents". בנתוני 12 חודשים – הערך הוא סכום ארבעת הרבעונים שבקישורים.</div>
+      </div>`;
+  }
+
+  // ---------------- חלונית הסבר ----------------
+  function initTips() {
+    const pop = $('#tip');
+    let current = null;
+    const hide = () => { pop.hidden = true; current = null; };
+    document.addEventListener('click', (e) => {
+      const b = e.target.closest('.i');
+      if (!b) { if (!e.target.closest('#tip')) hide(); return; }
+      e.preventDefault();
+      if (current === b) { hide(); return; }
+      current = b;
+      pop.textContent = EXPLAIN[b.dataset.tip] || '';
+      pop.hidden = false;
+      const r = b.getBoundingClientRect();
+      const w = Math.min(300, window.innerWidth - 24);
+      pop.style.maxWidth = w + 'px';
+      let left = r.left + window.scrollX + r.width / 2 - pop.offsetWidth / 2;
+      left = Math.max(12 + window.scrollX, Math.min(left, window.scrollX + window.innerWidth - pop.offsetWidth - 12));
+      pop.style.left = left + 'px';
+      pop.style.top = (r.bottom + window.scrollY + 8) + 'px';
+    });
+    document.addEventListener('keydown', (e) => { if (e.key === 'Escape') hide(); });
+    window.addEventListener('scroll', hide, { passive: true });
+  }
+
   // ---------------- ניווט פנימי ----------------
   function initSubnav() {
     const links = [...document.querySelectorAll('.subnav a')];
@@ -615,5 +772,6 @@
   window.addEventListener('resize', () => charts.forEach((c) => c.resize()));
   window.addEventListener('popstate', route);
   initSearch();
+  initTips();
   route();
 })();

@@ -223,3 +223,35 @@ details.full div { direction: ltr; text-align: left; color: #1F2A3D; line-height
 .foot { color: var(--muted); font-size: .8rem; border-top: 1px solid var(--rule); padding-top: 14px; padding-bottom: 40px; margin-top: 50px; }
 
 main { overflow-x: clip; }
+
+/* ---------- הסברים (tooltip) ---------- */
+.i { border: 0; background: none; padding: 0 2px; margin-inline-start: 4px; cursor: help; color: var(--muted); font: 600 .75rem var(--sans);
+  width: 16px; height: 16px; border-radius: 50%; border: 1px solid var(--rule); line-height: 14px; vertical-align: 1px; }
+.i:hover, .i:focus-visible { color: var(--ink); border-color: var(--ink); }
+.tip-pop { position: absolute; z-index: 50; max-width: 300px; background: var(--ink); color: #fff; font-size: .85rem; line-height: 1.55;
+  padding: 10px 12px; border-radius: var(--r); box-shadow: 0 8px 24px rgba(20,33,61,.25); }
+.verdict { display: inline-block; font-size: .72rem; font-weight: 600; border-radius: 999px; padding: 0 7px; margin-inline-start: 6px; vertical-align: 1px; }
+.verdict.g { background: #DDF3EA; color: #11684F; } .verdict.a { background: #FBEFD2; color: #7A5600; } .verdict.r { background: #FBE0E4; color: #9B0C23; }
+.verdict.n { background: var(--rule-2); color: var(--muted); }
+
+/* ---------- על איזה דוח ---------- */
+.asof { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; font-size: .88rem; color: var(--muted);
+  background: #fff; border: 1px solid var(--rule); border-radius: var(--r); padding: 9px 14px; margin-bottom: 14px; }
+.asof a { color: var(--ink); font-weight: 600; }
+.vbadge { display: inline-flex; align-items: center; gap: 6px; font-weight: 600; text-decoration: none; border-radius: 999px; padding: 2px 10px; margin-inline-start: auto; }
+.vbadge.ok { background: #DDF3EA; color: #11684F; } .vbadge.warn { background: #FBEFD2; color: #7A5600; } .vbadge.fail { background: #FBE0E4; color: #9B0C23; }
+
+/* ---------- אמינות ---------- */
+.checks { list-style: none; margin: 0; padding: 0; }
+.checks li { display: grid; grid-template-columns: 26px 1fr; gap: 10px; padding: 10px 0; border-bottom: 1px solid var(--rule-2); }
+.checks .st { width: 22px; height: 22px; border-radius: 50%; display: grid; place-items: center; color: #fff; font-size: .75rem; font-weight: 700; margin-top: 2px; }
+.st.ok { background: var(--green); } .st.warn { background: var(--amber); } .st.fail { background: var(--red); } .st.info { background: var(--muted); }
+.checks b { display: block; } .checks .d { color: var(--muted); font-size: .88rem; }
+.src td { vertical-align: top; }
+.src .how { color: var(--muted); font-size: .82rem; text-align: right !important; }
+.src .tag { direction: ltr; font-size: .75rem; color: var(--muted); word-break: break-all; text-align: left; }
+.flinks { display: flex; flex-wrap: wrap; gap: 4px; justify-content: flex-start; direction: rtl; }
+.flinks a { font-size: .78rem; border: 1px solid var(--rule); border-radius: 999px; padding: 1px 8px; text-decoration: none; color: var(--ink); white-space: nowrap; }
+.flinks a:hover { border-color: var(--ink); }
+.howto { font-size: .88rem; color: var(--muted); margin-top: 12px; }
+@media (max-width: 760px) { .src .tag { display: none; } }
