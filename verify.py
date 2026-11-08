@@ -42,8 +42,13 @@ def sources(data, dg) -> list[dict]:
         for it in items:
             if it not in prov or it not in used:
                 continue
+            rows = _rows_upto(prov[it], qe, n_flow if it in ("revenue", "net_income", "ocf", "capex", "op_income") else 1)
+            # נתון מאזני ישן (שלא דווח שוב) לא נכנס לחישוב – ולכן גם לא מוצג כמקור
+            rows = [r for r in rows if (pd.Timestamp(qe) - pd.Timestamp(r["period_end"])).days <= 200]
+            if not rows:
+                continue
             concepts.append(used[it])
-            for r in _rows_upto(prov[it], qe, n_flow if it in ("revenue", "net_income", "ocf", "capex", "op_income") else 1):
+            for r in rows:
                 if r["accn"]:
                     files[r["accn"]] = r
         fl = sorted(files.values(), key=lambda r: r["period_end"], reverse=True)

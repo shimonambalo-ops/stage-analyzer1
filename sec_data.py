@@ -317,17 +317,21 @@ def _instant_series(df: pd.DataFrame, sum_classes: bool = False) -> pd.DataFrame
 
 
 def _best_concept(facts: dict, item: str, kind: str):
-    """בוחר את המושג עם הנתון העדכני ביותר (ובשוויון – עם הכי הרבה היסטוריה)."""
+    """
+    בוחר את המושג עם הנתון העדכני ביותר. כשכמה מושגים עדכניים באותה מידה – לפי סדר העדיפות ברשימה
+    (למשל "מזומן" לפני "מזומן כולל מזומן מוגבל"). היסטוריה חסרה משלימים ב-_merge_concepts.
+    """
     best = None
     best_key = None
-    for ns, concept in CONCEPTS[item]:
+    for prio, (ns, concept) in enumerate(CONCEPTS[item]):
         df, unit = _facts_df(facts, ns, concept)
         if df.empty:
             continue
         s = _series(df, kind, sum_classes=(ns == "dei"))
         if s.empty:
             continue
-        key = (s.index.max(), len(s))
+        # תאריך עדכני (בדיוק של חודש, כדי שהבדלי ימים לא יכריעו) ואז עדיפות ברשימה
+        key = (s.index.max().to_period("M"), -prio)
         if best_key is None or key > best_key:
             best, best_key = (s, unit, f"{ns}:{concept}"), key
     return best
