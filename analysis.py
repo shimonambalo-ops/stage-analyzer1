@@ -1,0 +1,531 @@
+"""
+מנוע האבחון: שלב החברה לפי מסגרת "האבולוציה של חברה" (סטארטאפ → צמיחה → ערך),
+מדדי בריאות (קופה, חוב, דילול, צמצום הפסדים), אירועי מעבר לרווח נקי, ורמת סיכון.
+
+כל הספים נמצאים ב-Config וניתנים לכיוונון מהממשק.
+"""
+from __future__ import annotations
+
+import math
+from dataclasses import dataclass, field, replace
+
+import numpy as np
+import pandas as pd
+
+# ---------------------------------------------------------------------------
+# הגדרות
+# ---------------------------------------------------------------------------
+@dataclass
+class Config:
+    startup_rev: float = 25e6        # הכנסות TTM מתחת לזה = סטארטאפ
+    early_rev: float = 1e9           # עד כאן חברה "צעירה": הכפלת הכנסות מתחת לסף = מעבר סטארטאפ→צמיחה
+    growth_min: float = 0.20         # צמיחת הכנסות שנתית מעליה = חברת צמיחה
+    value_max: float = 0.08          # צמיחה מתחת לזה = חברת ערך (אם רווחית)
+    lookback_cross_q: int = 8        # כמה רבעונים אחורה בודקים "חצתה את סף הסטארטאפ לאחרונה"
+    inflection_window_q: int = 4     # כמה רבעונים אחרי המעבר לרווח עדיין מסומנים כ"מעבר לרווח"
+    breakeven_fit_q: int = 6         # כמה רבעונים להתאמת מגמת צמצום ההפסד
+    approaching_q: int = 4           # הערכת רווח תוך X רבעונים = "מתקרבת לרווח נקי"
+
+
+STAGES = {
+    "startup":           {"he": "סטארטאפ",                       "order": 0, "color": "#7C3AED"},
+    "startup_to_growth": {"he": "מעבר: סטארטאפ ← צמיחה",         "order": 1, "color": "#A855F7"},
+    "growth_loss":       {"he": "צמיחה הפסדית",                   "order": 2, "color": "#F59E0B"},
+    "inflection":        {"he": "מעבר לרווח נקי (Money Time)",    "order": 3, "color": "#10B981"},
+    "growth_profit":     {"he": "צמיחה רווחית",                   "order": 4, "color": "#22C55E"},
+    "maturing":          {"he": "מעבר: צמיחה ← ערך",             "order": 5, "color": "#0EA5E9"},
+    "value":             {"he": "ערך",                            "order": 6, "color": "#2563EB"},
+    "value_to_growth":   {"he": "מעבר: ערך ← צמיחה (האצה מחדש)", "order": 7, "color": "#14B8A6"},
+    "loss_slow":         {"he": "הפסדית בצמיחה איטית",            "order": 8, "color": "#EF4444"},
+    "declining":         {"he": "התכווצות",                       "order": 9, "color": "#B91C1C"},
+    "unknown":           {"he": "אין מספיק נתונים",               "order": 10, "color": "#9CA3AF"},
+}
+
+STAGE_EXPLAIN = {
+    "startup": (
+        "חברה עם רעיון ומוצר בפיתוח, בלי הכנסות משמעותיות. אין מכפילים, ולכן מעריכים אותה "
+        "לפי המאזן: כמה מזומן יש, כמה היא שורפת בשנה, וכמה זמן נשאר לה עד שתצטרך לגייס (ולדלל)."
+    ),
+    "startup_to_growth": (
+        "החברה התחילה להכניס כסף לראשונה מהמוצר. ההכנסות עדיין קטנות ביחס לשווי, אבל הקצב חד. "
+        "השאלה המרכזית: האם ההכנסות הן מהמוצר עצמו או מתמלוגים/שיתופי פעולה, והאם הקופה מחזיקה עד שהמנוע יתפוס."
+    ),
+    "growth_loss": (
+        "חברת צמיחה שכבר מכניסה כסף ממשי וצומחת מהר, אבל עדיין הפסדית. לפי השיטה מחפשים צמצום הפסדים "
+        "עקבי, מאזן עם יותר מזומן מחוב, והערכה מתי תגיע לרווח נקי – והאם הקופה מספיקה עד אז."
+    ),
+    "inflection": (
+        "החברה עברה לאחרונה לרווח נקי ב-12 החודשים האחרונים (Money Time). זה האירוע שבדוגמאות מהסרטון "
+        "(Palantir, SoFi, Robinhood) הגיע יחד עם תחילת המהלך הגדול. בודקים שהרווח נובע מהפעילות ולא מאירוע חד-פעמי."
+    ),
+    "growth_profit": (
+        "צמיחה גבוהה יחד עם רווחיות. כאן כבר יש מכפיל רווח, ומשווים את קצב הצמיחה למכפיל. "
+        "הסיכון העיקרי: האטה בצמיחה שתוביל לכיווץ מכפיל."
+    ),
+    "maturing": (
+        "חברה רווחית שהצמיחה שלה מתמתנת – בדרך להפוך לחברת ערך. מתמחרים לפי רווח ותזרים, "
+        "ובודקים אם השוק עדיין מתמחר אותה כחברת צמיחה."
+    ),
+    "value": (
+        "חברה בשלה: רווחית, צמיחה נמוכה. מתמחרים לפי מכפילי רווח ותזרים, דיבידנד ורכישות עצמיות. "
+        "לפי הסרטון – חברות מצוינות, אבל לא מכאן מגיעות תשואות שמנצחות את המדד בפער גדול."
+    ),
+    "value_to_growth": (
+        "חברה בשלה שחזרה להאיץ צמיחה (מנוע חדש, מוצר חדש, שוק חדש). שלב ביניים מעניין: "
+        "השוק לפעמים עדיין מתמחר אותה כחברת ערך."
+    ),
+    "loss_slow": (
+        "חברה הפסדית שהצמיחה שלה איטית – מחוץ למסלול האבולוציה הבריא. אין לה את הצמיחה שתצדיק הפסדים, "
+        "וגם לא את הרווחיות של חברת ערך. כאן הקופה והחוב הם הכל."
+    ),
+    "declining": (
+        "ההכנסות מתכווצות. לא שלב באבולוציה אלא סימן אזהרה – צריך להבין אם זה זמני (מחזוריות) או מבני."
+    ),
+    "unknown": "אין מספיק רבעונים מדווחים כדי לאבחן.",
+}
+
+STAGE_WATCH = {
+    "startup": ["קצב שריפת מזומנים מול הקופה (כמה זמן נשאר)", "גיוסי הון ודילול", "אבני דרך: מתי ההכנסה הראשונה מהמוצר"],
+    "startup_to_growth": ["מקור ההכנסות (מוצר מול תמלוגים)", "קצב צמיחת ההכנסות רבעון מול רבעון", "הקופה מול השריפה"],
+    "growth_loss": ["צמצום ההפסד מרבעון לרבעון", "מתי הרווח הנקי צפוי", "האם הקופה מספיקה עד הרווח", "חוב שהולך וגדל מול המאזן"],
+    "inflection": ["האם הרווח חוזר על עצמו ברבעונים הבאים", "רווח מפעילות מול רווח חד-פעמי", "מכפיל הרווח הראשון מול קצב הצמיחה"],
+    "growth_profit": ["שימור קצב הצמיחה", "שיפור שולי רווח", "מכפיל מול צמיחה"],
+    "maturing": ["האם הצמיחה ממשיכה להאט", "תזרים חופשי, דיבידנד ורכישות עצמיות", "מכפיל מול חברות ערך דומות"],
+    "value": ["מכפיל רווח ותזרים", "יציבות הרווח", "תשואת דיבידנד ורכישות עצמיות"],
+    "value_to_growth": ["מה מניע את ההאצה", "האם היא בת-קיימא", "האם המכפיל עוד לא משקף אותה"],
+    "loss_slow": ["הקופה מול השריפה", "חוב ומועדי פירעון", "סימנים לשינוי כיוון (התייעלות, מוצר חדש)"],
+    "declining": ["סיבת הירידה", "שולי רווח", "מאזן וחוב"],
+    "unknown": [],
+}
+
+# ---------------------------------------------------------------------------
+# עזר
+# ---------------------------------------------------------------------------
+def _contiguous_ttm(s: pd.Series) -> pd.Series:
+    """סכום 4 רבעונים רק כשהרבעונים רצופים (פער 80–100 ימים) וכולם קיימים."""
+    s = s.sort_index()
+    idx = s.index
+    vals = s.values.astype(float)
+    out = np.full(len(s), np.nan)
+    for i in range(3, len(s)):
+        window = vals[i - 3:i + 1]
+        if np.isnan(window).any():
+            continue
+        gaps = [(idx[j] - idx[j - 1]).days for j in range(i - 2, i + 1)]
+        if all(80 <= g <= 100 for g in gaps):
+            out[i] = window.sum()
+    return pd.Series(out, index=idx)
+
+
+def _value_year_ago(s: pd.Series, when: pd.Timestamp, tol_days: int = 25):
+    target = when - pd.Timedelta(days=365)
+    s = s.dropna()
+    if s.empty:
+        return np.nan
+    diffs = np.abs((s.index - target).days)
+    k = int(np.argmin(diffs))
+    return s.iloc[k] if diffs[k] <= tol_days else np.nan
+
+
+def _asof(s: pd.Series | None, when: pd.Timestamp, slack_days: int = 15, max_age_days: int = 400):
+    """הערך המאזני האחרון עד התאריך – רק אם הוא לא ישן מדי."""
+    if s is None:
+        return np.nan
+    s = s.dropna().sort_index()
+    s = s[s.index <= when + pd.Timedelta(days=slack_days)]
+    if not len(s) or (when - s.index[-1]).days > max_age_days:
+        return np.nan
+    return float(s.iloc[-1])
+
+
+# ---------------------------------------------------------------------------
+# מדדים רבעוניים
+# ---------------------------------------------------------------------------
+def compute_metrics(quarterly: pd.DataFrame, balance: pd.DataFrame, period_months: int = 3) -> pd.DataFrame:
+    q = quarterly.copy().sort_index()
+    m = pd.DataFrame(index=q.index)
+    m["revenue_q"] = q.get("revenue")
+    m["net_income_q"] = q.get("net_income")
+    m["ocf_q"] = q.get("ocf")
+    capex = q.get("capex")
+    if capex is not None and m["ocf_q"] is not None:
+        capex = capex.reindex(q.index)
+        # אם אין דיווח capex ברבעון – מניחים 0 רק כשיש תזרים תפעולי
+        capex = capex.where(capex.notna() | m["ocf_q"].isna(), 0.0)
+        m["fcf_q"] = m["ocf_q"] - capex.abs()
+    elif "ocf_q" in m:
+        m["fcf_q"] = m["ocf_q"]
+    m["sbc_q"] = q.get("sbc")
+
+    for col in ["revenue", "net_income", "ocf", "fcf", "sbc"]:
+        src = m.get(f"{col}_q")
+        if src is None or not src.notna().any():
+            m[f"{col}_ttm"] = np.nan
+        elif period_months == 12:
+            m[f"{col}_ttm"] = src  # בדוח שנתי – התקופה עצמה היא 12 חודשים
+        else:
+            m[f"{col}_ttm"] = _contiguous_ttm(src)
+
+    rev_yoy = []
+    for t in m.index:
+        cur = m.at[t, "revenue_ttm"]
+        prev = _value_year_ago(m["revenue_ttm"], t)
+        if pd.isna(cur) or pd.isna(prev):
+            rev_yoy.append(np.nan)
+        elif prev <= 1e6:  # מאפס/כמעט אפס – צמיחה "אינסופית"
+            rev_yoy.append(np.inf if cur > 5e6 else np.nan)
+        else:
+            rev_yoy.append(cur / prev - 1)
+    m["revenue_yoy"] = rev_yoy
+
+    m["net_margin_ttm"] = m["net_income_ttm"] / m["revenue_ttm"].where(m["revenue_ttm"] > 0)
+
+    b = balance.copy().sort_index() if balance is not None else pd.DataFrame()
+    for col in ["cash", "st_investments", "debt", "shares"]:
+        series = b[col] if col in b else None
+        m[col] = [_asof(series, t) for t in m.index]
+    m["liquid"] = m["cash"].fillna(0) + m["st_investments"].fillna(0)
+    m.loc[m["cash"].isna() & m["st_investments"].isna(), "liquid"] = np.nan
+    return m
+
+
+# ---------------------------------------------------------------------------
+# סיווג שלב
+# ---------------------------------------------------------------------------
+def classify_at(m: pd.DataFrame, i: int, cfg: Config) -> str:
+    row = m.iloc[i]
+    rev, ni, g = row["revenue_ttm"], row["net_income_ttm"], row["revenue_yoy"]
+
+    if pd.isna(ni):
+        return "unknown"
+    if pd.isna(rev) or rev < cfg.startup_rev:
+        return "startup"
+
+    past = m.iloc[max(0, i - cfg.lookback_cross_q):i]
+    past_rev = past["revenue_ttm"]
+    crossed_recently = len(past_rev.dropna()) > 0 and (past_rev.dropna() < cfg.startup_rev).any()
+    doubling_young = (not pd.isna(g) and g >= 1.0 and rev < cfg.early_rev)
+    if crossed_recently or doubling_young:
+        return "startup_to_growth"
+
+    # מעבר לרווח נקי: TTM חיובי לראשונה אחרי לפחות 2 רבעוני TTM שליליים
+    if ni > 0:
+        hist = m["net_income_ttm"].iloc[:i + 1].dropna()
+        if len(hist) >= 3:
+            pos = (hist > 0).values
+            # הרבעון הראשון ברצף החיובי הנוכחי
+            k = len(pos) - 1
+            while k > 0 and pos[k - 1]:
+                k -= 1
+            run_len = len(pos) - k
+            negatives_before = (~pos[:k]).sum()
+            if run_len <= cfg.inflection_window_q and negatives_before >= 2:
+                if pd.isna(g) or g >= cfg.value_max:
+                    return "inflection"
+
+    if pd.isna(g):
+        return "unknown"
+
+    if g >= cfg.growth_min:
+        if ni < 0:
+            return "growth_loss"
+        # האצה מחדש: 4–12 רבעונים אחורה רוב הזמן צמיחה נמוכה
+        older = m["revenue_yoy"].iloc[max(0, i - 12):max(0, i - 4)].replace([np.inf], np.nan).dropna()
+        if len(older) >= 4 and (older < cfg.value_max).mean() >= 0.5:
+            return "value_to_growth"
+        return "growth_profit"
+
+    if g < -0.10:
+        return "declining" if ni < 0 else "value"
+
+    if g >= cfg.value_max:
+        return "maturing" if ni > 0 else "loss_slow"
+
+    return "value" if ni > 0 else "loss_slow"
+
+
+def stage_history(m: pd.DataFrame, cfg: Config) -> pd.Series:
+    return pd.Series([classify_at(m, i, cfg) for i in range(len(m))], index=m.index)
+
+
+# ---------------------------------------------------------------------------
+# הערכת זמן לרווח נקי
+# ---------------------------------------------------------------------------
+def breakeven_estimate(m: pd.DataFrame, cfg: Config, period_months: int = 3) -> dict:
+    ni_q = m["net_income_q"].dropna()
+    res = {"quarters": None, "months": None, "slope": None, "r2": None, "trend": None}
+    if len(ni_q) < (4 if period_months == 3 else 3):
+        return res
+    recent = ni_q.iloc[-cfg.breakeven_fit_q:]
+    x = np.arange(len(recent), dtype=float)
+    y = recent.values.astype(float)
+    slope, intercept = np.polyfit(x, y, 1)
+    pred = slope * x + intercept
+    ss_res = ((y - pred) ** 2).sum()
+    ss_tot = ((y - y.mean()) ** 2).sum()
+    r2 = 1 - ss_res / ss_tot if ss_tot > 0 else 0.0
+    res.update(slope=float(slope), r2=float(r2))
+
+    ttm = m["net_income_ttm"].dropna()
+    if ttm.empty:
+        return res
+    if ttm.iloc[-1] > 0:
+        res["trend"] = "profitable"
+        res["quarters"] = 0
+        res["months"] = 0
+        return res
+
+    scale = max(1.0, float(np.abs(y).mean()))
+    if abs(slope) < 0.01 * scale:
+        res["trend"] = "flat"
+    else:
+        res["trend"] = "narrowing" if slope > 0 else "widening"
+    if slope <= 0 or res["trend"] == "flat":
+        return res
+    # הקרנה קדימה: רבעונים עתידיים לפי המגמה, עד ש-TTM המוקרן חיובי
+    k = 4 if period_months == 3 else 1  # כמה תקופות מרכיבות 12 חודשים
+    window = list(ni_q.iloc[-k:].values.astype(float))
+    n = len(recent)
+    for h in range(1, (21 if period_months == 3 else 6)):
+        nxt = slope * (n - 1 + h) + intercept
+        window = window[1:] + [nxt]
+        if sum(window) > 0:
+            res["quarters"] = h if period_months == 3 else None
+            res["months"] = h * period_months
+            break
+    return res
+
+
+# ---------------------------------------------------------------------------
+# אירועי מעבר לרווח נקי + ביצועי המניה מאז
+# ---------------------------------------------------------------------------
+def inflection_events(m: pd.DataFrame, quarterly: pd.DataFrame, prices: pd.Series | None) -> pd.DataFrame:
+    ttm = m["net_income_ttm"]
+    rows = []
+    vals = ttm.values
+    for i in range(1, len(vals)):
+        if pd.isna(vals[i]) or pd.isna(vals[i - 1]):
+            continue
+        if vals[i] > 0 and vals[i - 1] <= 0:
+            prior_neg = (ttm.iloc[:i].dropna() <= 0).sum()
+            if prior_neg < 2:
+                continue
+            qend = ttm.index[i]
+            filed = quarterly["filed"].get(qend) if "filed" in quarterly else None
+            event_date = pd.Timestamp(filed) if filed is not None and not pd.isna(filed) else qend + pd.Timedelta(days=45)
+            row = {"quarter_end": qend, "event_date": event_date, "ni_ttm": vals[i]}
+            if prices is not None and len(prices):
+                after = prices[prices.index >= event_date]
+                if len(after):
+                    p0 = float(after.iloc[0])
+                    row["price_at_event"] = p0
+                    row["price_now"] = float(prices.iloc[-1])
+                    row["return_since"] = float(prices.iloc[-1]) / p0 - 1
+                    row["max_return_since"] = float(after.max()) / p0 - 1
+                    yr = after[after.index <= event_date + pd.Timedelta(days=365)]
+                    if len(yr) and (after.index[-1] - event_date).days >= 360:
+                        row["return_12m"] = float(yr.iloc[-1]) / p0 - 1
+            rows.append(row)
+    return pd.DataFrame(rows)
+
+
+# ---------------------------------------------------------------------------
+# אבחון מלא + סיכון
+# ---------------------------------------------------------------------------
+@dataclass
+class Diagnosis:
+    stage: str
+    stage_he: str
+    approaching_profit: bool
+    metrics: pd.DataFrame
+    history: pd.Series
+    latest: dict
+    breakeven: dict
+    runway: dict
+    risk_score: int
+    risk_level: str
+    risk_reasons: list = field(default_factory=list)
+    positives: list = field(default_factory=list)
+    events: pd.DataFrame = field(default_factory=pd.DataFrame)
+    explain: str = ""
+    watch: list = field(default_factory=list)
+
+
+BASE_RISK = {
+    "startup": 35, "startup_to_growth": 28, "growth_loss": 20, "loss_slow": 30, "declining": 35,
+    "inflection": 15, "growth_profit": 10, "maturing": 8, "value": 5, "value_to_growth": 10, "unknown": 25,
+}
+
+
+def _risk_level(score: int) -> str:
+    if score < 25:
+        return "נמוך"
+    if score < 50:
+        return "בינוני"
+    if score < 75:
+        return "גבוה"
+    return "גבוה מאוד"
+
+
+def diagnose(data, cfg: Config | None = None) -> Diagnosis:
+    cfg = cfg or Config()
+    pm = getattr(data, "period_months", 3)
+    if pm == 12:  # התאמת חלונות הזמן לנתונים שנתיים
+        cfg = replace(cfg, lookback_cross_q=2, inflection_window_q=1, breakeven_fit_q=4)
+    m = compute_metrics(data.quarterly, data.balance, pm)
+    m = m[m["net_income_q"].notna() | m["revenue_q"].notna()]
+    hist = stage_history(m, cfg)
+
+    # השלב הנוכחי = הרבעון האחרון שאפשר לסווג
+    valid = hist[hist != "unknown"]
+    stage = valid.iloc[-1] if len(valid) else "unknown"
+    li = m.index.get_loc(valid.index[-1]) if len(valid) else len(m) - 1
+    last = m.iloc[li] if len(m) else pd.Series(dtype=float)
+
+    be = breakeven_estimate(m.iloc[:li + 1], cfg, pm)
+
+    # ---- קופה ----
+    liquid = last.get("liquid", np.nan)
+    n_recent = 4 if pm == 3 else 1
+    fcf_recent = m["fcf_q"].iloc[max(0, li - n_recent + 1):li + 1].dropna() if "fcf_q" in m else pd.Series(dtype=float)
+    burn_q = -fcf_recent.mean() if len(fcf_recent) else np.nan  # שריפה לתקופה (רבעון או שנה)
+    runway = {"liquid": liquid, "burn_q_fcf": burn_q, "months_fcf": None, "months_ni": None, "self_funded": False}
+    if not pd.isna(burn_q) and not pd.isna(liquid):
+        if burn_q > 0:
+            runway["months_fcf"] = max(0.0, liquid) / burn_q * pm
+        else:
+            runway["self_funded"] = True
+    ni_ttm = last.get("net_income_ttm", np.nan)
+    if not pd.isna(ni_ttm) and ni_ttm < 0 and not pd.isna(liquid):
+        runway["months_ni"] = max(0.0, liquid) / (-ni_ttm) * 12  # השיטה מהסרטון: קופה / הפסד שנתי
+
+    # ---- דילול ----
+    shares_now = last.get("shares", np.nan)
+    shares_prev = _value_year_ago(m["shares"].iloc[:li + 1], m.index[li]) if len(m) else np.nan
+    dilution = shares_now / shares_prev - 1 if shares_prev and not pd.isna(shares_prev) and not pd.isna(shares_now) else np.nan
+
+    # ---- שווי ----
+    mcap = data.market_cap if data.currency == "USD" else None
+    rev_ttm = last.get("revenue_ttm", np.nan)
+    ps = mcap / rev_ttm if mcap and rev_ttm and rev_ttm > 0 else np.nan
+    pe = mcap / ni_ttm if mcap and not pd.isna(ni_ttm) and ni_ttm > 0 else np.nan
+    fcf_ttm = last.get("fcf_ttm", np.nan)
+    pfcf = mcap / fcf_ttm if mcap and not pd.isna(fcf_ttm) and fcf_ttm > 0 else np.nan
+
+    # ---- תנודתיות ----
+    vol = np.nan
+    if data.prices is not None and len(data.prices) > 60:
+        r = data.prices.iloc[-252:].pct_change().dropna()
+        vol = float(r.std() * math.sqrt(252))
+
+    # ---- האטה בצמיחה ----
+    g = last.get("revenue_yoy", np.nan)
+    g_prev = _value_year_ago(m["revenue_yoy"].replace([np.inf], np.nan).iloc[:li + 1], m.index[li]) if len(m) else np.nan
+
+    sbc_ratio = last.get("sbc_ttm", np.nan) / rev_ttm if rev_ttm and rev_ttm > 0 else np.nan
+    debt = last.get("debt", np.nan)
+
+    latest = {
+        "quarter_end": m.index[li] if len(m) else None,
+        "revenue_ttm": rev_ttm, "revenue_yoy": g, "revenue_yoy_prev": g_prev,
+        "net_income_ttm": ni_ttm, "net_margin_ttm": last.get("net_margin_ttm", np.nan),
+        "fcf_ttm": fcf_ttm, "sbc_ttm": last.get("sbc_ttm", np.nan), "sbc_ratio": sbc_ratio,
+        "cash": last.get("cash", np.nan), "liquid": liquid, "debt": debt,
+        "shares": shares_now, "dilution_yoy": dilution,
+        "market_cap": mcap, "ps": ps, "pe": pe, "pfcf": pfcf, "volatility": vol,
+        "last_price": data.last_price,
+    }
+
+    # ---- ניקוד סיכון ----
+    score = BASE_RISK.get(stage, 25)
+    reasons, positives = [], []
+    reasons.append((BASE_RISK.get(stage, 25), f"בסיס לשלב \"{STAGES[stage]['he']}\""))
+
+    def add(pts, text):
+        nonlocal score
+        score += pts
+        (reasons if pts > 0 else positives).append((pts, text))
+
+    rm = runway["months_fcf"]
+    if runway["self_funded"]:
+        add(-5, "תזרים חופשי חיובי – החברה מממנת את עצמה")
+    elif rm is not None:
+        if rm < 12:
+            add(30, f"הקופה מספיקה לכ-{rm:.0f} חודשים בלבד – סכנת גיוס/דילול גבוהה")
+        elif rm < 24:
+            add(15, f"הקופה מספיקה לכ-{rm:.0f} חודשים")
+        elif rm < 36:
+            add(6, f"הקופה מספיקה לכ-{rm:.0f} חודשים")
+        else:
+            add(-3, f"קופה ארוכה – כ-{rm:.0f} חודשים בקצב השריפה הנוכחי")
+
+    if be.get("months") and be["months"] > 0 and rm is not None:
+        be_months = be["months"]
+        if be_months > rm:
+            add(10, f"לפי המגמה, הרווח צפוי בעוד ~{be_months} חודשים – אחרי שהקופה נגמרת. צפוי גיוס")
+        else:
+            add(-3, "לפי המגמה, הקופה מספיקה עד הרווח הנקי הצפוי")
+
+    if not pd.isna(debt) and not pd.isna(liquid) and debt > liquid:
+        if not pd.isna(ni_ttm) and ni_ttm < 0:
+            add(12, "חוב גבוה מהמזומן בחברה הפסדית")
+        else:
+            add(5, "חוב גבוה מהמזומן")
+    elif not pd.isna(liquid) and (pd.isna(debt) or debt < liquid):
+        add(-2, "יותר מזומן מחוב")
+
+    if not pd.isna(dilution):
+        if dilution > 0.20:
+            add(15, f"דילול כבד: מספר המניות גדל ב-{dilution:.0%} בשנה")
+        elif dilution > 0.08:
+            add(8, f"דילול משמעותי: {dilution:.0%} בשנה")
+        elif dilution > 0.03:
+            add(3, f"דילול מתון: {dilution:.0%} בשנה")
+        elif dilution < -0.02:
+            add(-3, f"רכישה עצמית: מספר המניות ירד ב-{-dilution:.0%}")
+
+    if be.get("trend") == "widening":
+        add(10, "ההפסדים מתרחבים מתקופה לתקופה")
+    elif be.get("trend") == "narrowing":
+        add(-2, "ההפסדים מצטמצמים מתקופה לתקופה")
+
+    if not pd.isna(g) and np.isfinite(g):
+        if g < -0.10:
+            add(10, f"ההכנסות ירדו ב-{-g:.0%} בשנה")
+        elif stage in ("growth_loss", "growth_profit", "inflection") and not pd.isna(g_prev) and g_prev > 0.3 and g < g_prev * 0.5:
+            add(5, f"האטה חדה בצמיחה: מ-{g_prev:.0%} ל-{g:.0%}")
+
+    if not pd.isna(ps):
+        if ps > 40:
+            add(12, f"תמחור קיצוני: מכפיל מכירות {ps:.0f}")
+        elif ps > 20:
+            add(7, f"תמחור גבוה: מכפיל מכירות {ps:.0f}")
+        elif ps > 10:
+            add(3, f"מכפיל מכירות {ps:.0f}")
+
+    if not pd.isna(sbc_ratio) and sbc_ratio > 0.30:
+        add(5, f"תגמול במניות = {sbc_ratio:.0%} מההכנסות (דילול סמוי)")
+
+    if not pd.isna(vol):
+        if vol > 0.80:
+            add(8, f"תנודתיות שנתית קיצונית: {vol:.0%}")
+        elif vol > 0.50:
+            add(4, f"תנודתיות שנתית גבוהה: {vol:.0%}")
+
+    score = int(max(3, min(100, round(score))))  # אין מניה בלי סיכון
+    approaching = (
+        stage in ("growth_loss", "startup_to_growth", "loss_slow")
+        and be.get("months") is not None and 0 < be["months"] <= cfg.approaching_q * 3
+    )
+
+    events = inflection_events(m, data.quarterly, data.prices)
+    if pm == 12 and len(events) and "filed" not in data.quarterly:
+        events["event_date"] = events["quarter_end"] + pd.Timedelta(days=100)
+
+    return Diagnosis(
+        stage=stage, stage_he=STAGES[stage]["he"], approaching_profit=approaching,
+        metrics=m, history=hist, latest=latest, breakeven=be, runway=runway,
+        risk_score=score, risk_level=_risk_level(score),
+        risk_reasons=reasons, positives=positives, events=events,
+        explain=STAGE_EXPLAIN[stage], watch=STAGE_WATCH[stage],
+    )
