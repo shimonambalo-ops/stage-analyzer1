@@ -158,6 +158,7 @@ def analyze(ticker: str) -> dict:
         "cfi_ttm": list(m["cfi_ttm"]) if "cfi_ttm" in m else [],
         "cff_ttm": list(m["cff_ttm"]) if "cff_ttm" in m else [],
         "liquid": list(m["liquid"]), "debt": list(m["debt"]), "shares": list(m["shares"]),
+        "shares_avg": list(m["shares_avg"]) if "shares_avg" in m else [],
         "stage": [s for s in dg.history.reindex(m.index).fillna("unknown")],
     }
 

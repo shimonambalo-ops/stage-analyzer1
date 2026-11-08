@@ -213,6 +213,15 @@ def fetch_company_facts(cik: int, user_agent: str = DEFAULT_UA) -> dict:
 # ---------------------------------------------------------------------------
 # פירוק companyfacts לסדרות
 # ---------------------------------------------------------------------------
+# רק דוחות כספיים. דוח לבעלי מניות לקראת אסיפה (DEF 14A) מתייג "רווח נקי" בטבלת שכר מול ביצועים –
+# לעיתים כרווח המאוחד (כולל זכויות מיעוט) – ובלי הסינון הוא דורס את הערך מהדוח השנתי.
+FIN_FORMS = {"10-K", "10-Q", "10-KT", "10-QT", "20-F", "40-F", "6-K", "8-K", "S-1", "S-4", "F-1", "F-4", "10-12B"}
+
+
+def _is_fin_form(f) -> bool:
+    return isinstance(f, str) and f.replace("/A", "") in FIN_FORMS
+
+
 def _facts_df(facts: dict, ns: str, concept: str) -> tuple[pd.DataFrame, str | None]:
     """מחזיר DataFrame של כל הדיווחים למושג + יחידת המידה."""
     node = facts.get("facts", {}).get(ns, {}).get(concept)
@@ -232,6 +241,10 @@ def _facts_df(facts: dict, ns: str, concept: str) -> tuple[pd.DataFrame, str | N
     df = pd.DataFrame(units[unit])
     if df.empty or "end" not in df:
         return pd.DataFrame(), unit
+    if "form" in df:
+        df = df[df["form"].map(_is_fin_form)]
+        if df.empty:
+            return pd.DataFrame(), unit
     df["end"] = pd.to_datetime(df["end"], errors="coerce")
     if "start" in df:
         df["start"] = pd.to_datetime(df["start"], errors="coerce")
@@ -280,6 +293,26 @@ def _quarterly_from_duration(df: pd.DataFrame) -> pd.DataFrame:
     # איחוד תאריכי סוף קרובים (הפרש של ימים בודדים בין דוחות)
     out = out[~out.index.duplicated(keep="last")]
     return out
+
+
+def quarterly_average_shares(facts: dict):
+    """
+    מספר המניות הממוצע (מדולל, ואם אין – בסיסי) של כל רבעון, כפי שמשמש לחישוב הרווח למניה.
+    רק דיווחים של 3 חודשים בדיוק: ממוצע לא מחשבים כהפרש בין דיווחים מצטברים.
+    בניגוד למספר המניות בעמוד השער, הממוצע לא כולל מניות חסומות שעוד לא הבשילו (למשל מענק ביצועים למנכ"ל).
+    """
+    for ns, concept in CONCEPTS["shares_diluted_avg"]:
+        df, _ = _facts_df(facts, ns, concept)
+        if df.empty or "start" not in df:
+            continue
+        d = _with_meta(df.dropna(subset=["start"]).copy())
+        d["days"] = (d["end"] - d["start"]).dt.days
+        d = d[(d["days"] >= 80) & (d["days"] <= 100)]
+        if d.empty:
+            continue
+        d = d.sort_values("filed").drop_duplicates(subset=["end"], keep="last").set_index("end").sort_index()
+        return d["val"].astype(float), f"{ns}:{concept}"
+    return None, None
 
 
 def _annual_from_duration(df: pd.DataFrame) -> pd.DataFrame:
@@ -495,10 +528,16 @@ def build_company_data(facts: dict, ticker: str, name: str, cik: int) -> Company
         and (last_q - b["shares"].last_valid_index()).days < 200
     )
     if not shares_ok:
-        res = _merge_concepts(facts, "shares_diluted_avg", flow_kind)
-        if res is not None and (last_q - res[0].index.max()).days < 200:
-            b = b.drop(columns=["shares"], errors="ignore").combine_first(pd.DataFrame({"shares": res[0]["val"]}))
-            used["shares"] = res[2] + " (ממוצע משוקלל)"
+        avg, avg_name = quarterly_average_shares(facts)
+        if avg is not None and (last_q - avg.index.max()).days < 200:
+            b = b.drop(columns=["shares"], errors="ignore").combine_first(pd.DataFrame({"shares": avg}))
+            used["shares"] = avg_name + " (ממוצע משוקלל)"
+
+    if flow_kind == "flow":
+        avg, avg_name = quarterly_average_shares(facts)
+        if avg is not None:
+            q["shares_avg"] = avg.reindex(q.index)
+            used["shares_avg"] = avg_name
 
     if currency != "USD":
         warnings.append(f"הדוחות מדווחים ב-{currency}. השוואות לשווי שוק בדולרים עלולות להיות לא מדויקות.")

@@ -33,7 +33,7 @@
     vol: 'סטיית התקן השנתית של התשואות היומיות בשנה האחרונה. מעל 50% = מניה תנודתית מאוד.',
     avgvol: 'ממוצע המניות שנסחרות ביום.',
     shares: 'מספר המניות של החברה, לפי הדוח האחרון.',
-    dil: 'בכמה גדל מספר המניות בשנה האחרונה. גידול = כל מניה מחזיקה חלק קטן יותר מהחברה.',
+    dil: 'בכמה גדל מספר המניות בשנה האחרונה – לפי מספר המניות הממוצע המדולל שמשמש לחישוב הרווח למניה, רבעון מול אותו רבעון אשתקד. גידול = כל מניה מחזיקה חלק קטן יותר מהחברה. המספר בעמוד השער של הדוח כולל גם מניות חסומות שעוד לא הבשילו (למשל מענק ביצועים למנכ"ל), ולכן יכול להיות גבוה יותר.',
     short: 'אחוז מהמניות הצפות שמושאלות למכירה בחסר – כלומר הימורים על ירידה.',
     inst: 'אחוז מהמניות שמוחזקות בידי גופים מוסדיים: קרנות, בנקים וחברות ביטוח.',
     insider: 'אחוז מהמניות שמוחזקות בידי מנהלים, מייסדים ובעלי עניין.',
@@ -653,8 +653,10 @@
             <div class="fsub">12 חודשים מתגלגלים. הפס העליון: השלב שאובחן בכל רבעון.</div></div>
             ${kpi(esc(A.stage_he), '')}</div>
           <div class="chart" id="cCF" style="height:340px"></div></div>
-        <div class="fcard"><div class="fhead"><div><h3>הכנסות</h3><div class="fsub">${per}, וצמיחה שנתית ב-%</div></div>
-            ${kpi(money(L.revenue_ttm, A.currency), bad(L.revenue_yoy) ? '' : `${pct(L.revenue_yoy)} בשנה`, cls(L.revenue_yoy))}</div>
+        <div class="fcard"><div class="fhead"><div><h3>הכנסות</h3><div class="fsub">${per}; הקו: צמיחה ב-12 חודשים מול 12 החודשים שלפניהם</div></div>
+            ${kpi(`${money(L.revenue_ttm, A.currency)} <span style="font-weight:500;font-size:.8rem">ב-12 ח'</span>`,
+              [bad(L.revenue_yoy) ? '' : `${pct(L.revenue_yoy)} ב-12 ח'`, bad(L.revenue_q_yoy) ? '' : `${pct(L.revenue_q_yoy)} ב-${qLabel(L.quarter_end)} מול אשתקד`].filter(Boolean).join('<br>'),
+              cls(L.revenue_yoy))}</div>
           <div class="chart sm" id="cRev"></div></div>
         <div class="fcard"><div class="fhead"><div><h3>רווחיות</h3><div class="fsub">12 חודשים מתגלגלים</div></div>
             ${kpi(money(L.net_income_ttm, A.currency), bad(L.net_margin_ttm) ? '' : `שולי רווח ${pct(L.net_margin_ttm, false)}`, cls(L.net_income_ttm))}</div>
@@ -662,12 +664,20 @@
         <div class="fcard"><div class="fhead"><div><h3>מזומן מול חוב</h3><div class="fsub">לסוף כל רבעון</div></div>
             ${kpi(money(netCash, A.currency), bad(netCash) ? '' : (netCash >= 0 ? 'מזומן נטו' : 'חוב נטו'), cls(netCash))}</div>
           ${debtNote(A)}<div class="chart sm" id="cCash"></div></div>
-        <div class="fcard"><div class="fhead"><div><h3>מספר מניות</h3><div class="fsub">גידול = דילול</div></div>
-            ${kpi(big(last(sh)), bad(L.dilution_yoy) ? '' : `${pct(L.dilution_yoy)} בשנה`, bad(L.dilution_yoy) ? '' : L.dilution_yoy > 0.01 ? 'neg' : L.dilution_yoy < -0.01 ? 'pos' : '')}</div>
+        <div class="fcard"><div class="fhead"><div><h3>מספר מניות</h3><div class="fsub">גידול = דילול. ${L.dilution_basis === 'avg' ? 'הדילול לפי הממוצע המדולל (לרווח למניה)' : 'לפי עמוד השער של הדוח'}</div></div>
+            ${kpi(big(last(sh)), bad(L.dilution_yoy) ? '' : `דילול ${pct(L.dilution_yoy)} בשנה`, bad(L.dilution_yoy) ? '' : L.dilution_yoy > 0.01 ? 'neg' : L.dilution_yoy < -0.01 ? 'pos' : '')}</div>
+          ${L.dilution_basis === 'avg' && !bad(L.cover_shares_yoy) && Math.abs(L.cover_shares_yoy - L.dilution_yoy) > 0.05
+            ? `<div class="note">בעמוד השער של הדוח מספר המניות גדל ב-${pct(L.cover_shares_yoy)} בשנה. הפער מגיע ממניות שהונפקו אבל עוד לא נכנסות לחישוב הרווח למניה – בדרך כלל מניות חסומות שעוד לא הבשילו.</div>` : ''}
           <div class="chart sm" id="cSh"></div></div>
       </div>`;
 
-    const X = { type: 'category', data: d.map(qLabel), ...AX, splitLine: { show: false }, axisLabel: { ...AX.axisLabel, hideOverlap: true } };
+    // תוויות ציר: תמיד מציגים את הרבעון האחרון, וסופרים אחורה ממנו (אחרת התווית האחרונה עלולה להיעלם)
+    const xFor = (maxLabels) => {
+      const step = Math.max(1, Math.ceil(d.length / maxLabels));
+      return { type: 'category', data: d.map(qLabel), ...AX, splitLine: { show: false },
+        axisLabel: { ...AX.axisLabel, interval: (i) => (d.length - 1 - i) % step === 0 } };
+    };
+    const X = xFor(6), XW = xFor(12);
     const Ymoney = { type: 'value', ...AX, axisLabel: { ...AX.axisLabel, formatter: (v) => moneyPlain(v) } };
     const G = { left: 60, right: 16, top: 16, bottom: 44 };
     const fmtTip = (ps, fmt) => tipRows(qLong(d[ps[0].dataIndex]), ps.filter((p) => p.value !== null && p.value !== undefined && p.seriesName)
@@ -678,7 +688,7 @@
     cf.setOption({
       textStyle: { fontFamily: C.font }, animation: false,
       grid: [{ left: 60, right: 16, top: 8, height: 14 }, { left: 60, right: 16, top: 34, bottom: 44 }],
-      xAxis: [{ ...X, gridIndex: 0, show: false }, { ...X, gridIndex: 1 }],
+      xAxis: [{ ...XW, gridIndex: 0, show: false }, { ...XW, gridIndex: 1 }],
       yAxis: [{ gridIndex: 0, show: false, max: 1 }, { ...Ymoney, gridIndex: 1 }],
       legend: { ...LEG, data: ['תזרים מפעילות שוטפת', 'תזרים מהשקעות', 'תזרים ממימון'] },
       tooltip: { ...TIP, axisPointer: { type: 'shadow', shadowStyle: { color: 'rgba(20,33,61,.04)' } },
@@ -735,7 +745,9 @@
     baseChart($('#cSh')).setOption({ textStyle: { fontFamily: C.font }, animation: false, grid: G, legend: LEG,
       tooltip: { ...TIP, formatter: (ps) => fmtTip(ps, nf) }, xAxis: X,
       yAxis: { type: 'value', scale: true, ...AX, axisLabel: { ...AX.axisLabel, formatter: (v) => Intl.NumberFormat('en-US', { notation: 'compact' }).format(v) } },
-      series: [{ type: 'line', name: 'מניות', data: sh, showSymbol: false, step: 'end', lineStyle: { color: PAL.violet, width: 2 }, itemStyle: { color: PAL.violet } }] });
+      series: [{ type: 'line', name: 'מניות (עמוד השער)', data: sh, showSymbol: false, step: 'end', lineStyle: { color: PAL.violet, width: 2 }, itemStyle: { color: PAL.violet } }]
+        .concat((s.shares_avg || []).some((v) => !bad(v)) ? [{ type: 'line', name: 'ממוצע מדולל (לרווח למניה)', data: s.shares_avg, connectNulls: true, showSymbol: false,
+          lineStyle: { color: PAL.slate, width: 1.6, type: 'dashed' }, itemStyle: { color: PAL.slate } }] : []) });
   }
 
   // ---------------- עדכונים ----------------

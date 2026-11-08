@@ -157,6 +157,7 @@ def compute_metrics(quarterly: pd.DataFrame, balance: pd.DataFrame, period_month
         m["fcf_q"] = m["ocf_q"]
     m["sbc_q"] = q.get("sbc")
     m["op_income_q"] = q.get("op_income")
+    m["shares_avg"] = q.get("shares_avg")
     m["cfi_q"] = q.get("cfi")
     m["cff_q"] = q.get("cff")
 
@@ -180,6 +181,8 @@ def compute_metrics(quarterly: pd.DataFrame, balance: pd.DataFrame, period_month
         else:
             rev_yoy.append(cur / prev - 1)
     m["revenue_yoy"] = rev_yoy
+    rq = m["revenue_q"]
+    m["revenue_q_yoy"] = [ (rq.at[t] / p - 1) if (not pd.isna(rq.at[t]) and not pd.isna(p := _value_year_ago(rq, t)) and p > 0) else np.nan for t in m.index ]
 
     m["net_margin_ttm"] = m["net_income_ttm"] / m["revenue_ttm"].where(m["revenue_ttm"] > 0)
     # רווח נקי חיובי שנובע מרווח לא תפעולי (למשל שערוך כתבי אופציה או ריבית על הקופה) כשהפעילות עצמה מפסידה
@@ -422,6 +425,14 @@ def diagnose(data, cfg: Config | None = None) -> Diagnosis:
     shares_now = last.get("shares", np.nan)
     shares_prev = _value_year_ago(m["shares"].iloc[:li + 1], m.index[li]) if len(m) else np.nan
     dilution = shares_now / shares_prev - 1 if shares_prev and not pd.isna(shares_prev) and not pd.isna(shares_now) else np.nan
+    # דילול = שינוי במספר המניות הממוצע המדולל (זה שבחישוב הרווח למניה), רבעון מול אותו רבעון אשתקד.
+    # מספר המניות בעמוד השער כולל גם מניות חסומות שטרם הבשילו, ולכן יכול להגזים (למשל טסלה אחרי מענק המנכ"ל).
+    dilution_basis = "cover"
+    avg = m["shares_avg"].iloc[:li + 1].dropna() if "shares_avg" in m and len(m) else pd.Series(dtype=float)
+    if len(avg) and (m.index[li] - avg.index[-1]).days <= 100:
+        avg_prev = _value_year_ago(avg, avg.index[-1])
+        if not pd.isna(avg_prev) and avg_prev > 0:
+            dilution, dilution_basis = avg.iloc[-1] / avg_prev - 1, "avg"
 
     # ---- שווי ----
     mcap = data.market_cap if data.currency == "USD" else None
@@ -447,11 +458,13 @@ def diagnose(data, cfg: Config | None = None) -> Diagnosis:
     latest = {
         "quarter_end": m.index[li] if len(m) else None,
         "revenue_ttm": rev_ttm, "revenue_yoy": g, "revenue_yoy_prev": g_prev,
+        "revenue_q_yoy": last.get("revenue_q_yoy", np.nan),
         "net_income_ttm": ni_ttm, "net_margin_ttm": last.get("net_margin_ttm", np.nan),
         "fcf_ttm": fcf_ttm, "sbc_ttm": last.get("sbc_ttm", np.nan), "sbc_ratio": sbc_ratio,
         "cash": last.get("cash", np.nan), "st_investments": last.get("st_investments", np.nan),
         "liquid": liquid, "debt": debt,
-        "shares": shares_now, "dilution_yoy": dilution,
+        "shares": shares_now, "dilution_yoy": dilution, "dilution_basis": dilution_basis,
+        "cover_shares_yoy": (shares_now / shares_prev - 1) if shares_prev and not pd.isna(shares_prev) and not pd.isna(shares_now) else np.nan,
         "market_cap": mcap, "ps": ps, "pe": pe, "pfcf": pfcf, "volatility": vol,
         "last_price": data.last_price,
         "non_operating_profit": bool(last.get("non_operating_profit", False)) if len(m) else False,

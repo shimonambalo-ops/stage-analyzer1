@@ -203,3 +203,33 @@ if __name__ == "__main__":
     test_non_operating_profit_is_not_inflection()
     test_spac_shell_filings_are_dropped_and_securities_counted()
     print("\nכל הבדיקות עברו")
+
+
+def test_proxy_statement_does_not_override_annual_report():
+    """DEF 14A (טבלת שכר מול ביצועים) מתייג רווח נקי מאוחד – לא אמור לדרוס את הרווח מה-10-K (טסלה, Q4 2025)."""
+    n = 16
+    rev = [1e9] * n
+    ni = [100e6] * n
+    f = make_facts(rev, ni, ni, [1e9] * n, [100e6] * n)
+    rows = f["facts"]["us-gaap"]["NetIncomeLoss"]["units"]["USD"]
+    fy = [r for r in rows if r["form"] == "10-K"][-1]
+    rows.append({**fy, "val": fy["val"] + 61e6, "filed": "2030-01-01", "form": "DEF 14A"})
+    d = sec_data.build_company_data(f, "T", "T", 1)
+    assert abs(d.quarterly["net_income"].iloc[-1] - 100e6) < 1, d.quarterly["net_income"].tail(2)
+
+
+def test_dilution_uses_average_diluted_shares():
+    """מניות חסומות שהונפקו למנכ"ל מנפחות את עמוד השער; הדילול נמדד לפי הממוצע המדולל."""
+    n = 16
+    f = make_facts([1e9] * n, [100e6] * n, [100e6] * n, [1e9] * n,
+                   [3.2e9] * (n - 4) + [3.95e9] * 4)  # קפיצה של 23% בעמוד השער
+    qs = fiscal_quarters(2019, n // 4)
+    avg = [3.50e9 + 5e6 * i for i in range(n)]
+    f["facts"]["us-gaap"]["WeightedAverageNumberOfDilutedSharesOutstanding"] = {"units": {"shares": [
+        {"start": s.isoformat(), "end": e.isoformat(), "val": v, "filed": (e + timedelta(days=40)).isoformat(), "form": "10-Q"}
+        for (y, qi, s, e), v in zip(qs, avg) if qi < 4]}}
+    d, dg = run(f)
+    L = dg.latest
+    assert L["dilution_basis"] == "avg", L
+    assert abs(L["dilution_yoy"]) < 0.02, L["dilution_yoy"]
+    assert L["cover_shares_yoy"] > 0.2
