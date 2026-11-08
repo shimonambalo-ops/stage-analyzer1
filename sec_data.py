@@ -585,6 +585,35 @@ def _align(s: pd.Series, idx: pd.DatetimeIndex, tol_days: int = 20) -> pd.Series
     return pd.Series(out, index=idx)
 
 
+def _scan_da(facts: dict):
+    """
+    חלופה אחרונה לפחת והפחתות: חברות רבות משתמשות בשדה ייחודי (למשל crwd:DepreciationAndAmortization...).
+    מחפשים בכל מרחבי השמות שדה שמתחיל ב-Depreciation וכולל Amortization, ובוחרים את בעל הכיסוי הטוב והערך הגדול.
+    """
+    best = None
+    for ns, concepts in facts.get("facts", {}).items():
+        for c in concepts:
+            lc = c.lower()
+            if not lc.startswith("depreciation") or "amortization" not in lc:
+                continue
+            if any(w in lc for w in ("accumulated", "deferred", "tax", "impairment", "debt", "financing", "lease")):
+                continue
+            df, unit = _facts_df(facts, ns, c)
+            if df.empty or unit != "USD":
+                continue
+            s = _annual_from_duration(df)
+            if s.empty:
+                continue
+            recent = s[s.index >= s.index.max() - pd.Timedelta(days=1500)]
+            key = (s.index.max().to_period("Y"), len(recent), float(recent["val"].abs().mean()))
+            if best is None or key > best[0]:
+                best = (key, s, f"{ns}:{c}")
+    if best is None:
+        return None
+    _, s, name = best
+    return s["val"].astype(float), s[["accn", "form", "src_filed"]], name
+
+
 def build_fiscal(facts: dict, used: dict | None = None):
     """טבלת שנות כספים: כל שדה זרימה כפי שדווח לשנה מלאה בדוח השנתי."""
     raw, prov = {}, {}
@@ -599,6 +628,12 @@ def build_fiscal(facts: dict, used: dict | None = None):
         prov[item] = s[["accn", "form", "src_filed"]]
         if used is not None:
             used.setdefault(f"fy:{item}", concept)
+    if "da" not in raw:
+        res = _scan_da(facts)
+        if res is not None:
+            raw["da"], prov["da"], name = res
+            if used is not None:
+                used["fy:da"] = name
     base = [raw[k] for k in ("ocf", "revenue", "net_income") if k in raw]
     if not base:
         return pd.DataFrame(), prov

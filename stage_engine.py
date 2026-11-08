@@ -139,6 +139,10 @@ def fiscal_rows(data) -> list[dict]:
         sec_prev = sec_level(prev_t) if prev_t is not None else None
         sec_change = (sec_now - sec_prev) if (sec_now is not None and sec_prev is not None) else 0.0
         cfi_adj = (cfi + sec_change) if (cfi is not None and C.NEUTRALIZE_SECURITIES) else cfi
+        # הנטרול לא "ממציא" מכירת נכסים: עלייה ביתרת ניירות הערך יכולה לנבוע גם מרכישת חברה או משערוך,
+        # ולכן אם התזרים המקורי שלילי – אחרי הנטרול הוא לכל היותר 0 (ולא מכירת נכסים)
+        if cfi is not None and cfi_adj is not None and cfi <= 0 < cfi_adj:
+            cfi_adj = 0.0
 
         capex = abs(g("capex")) if g("capex") is not None else (0.0 if ocf is not None else None)
         fcf = (ocf - capex) if (ocf is not None and capex is not None) else None
@@ -157,11 +161,14 @@ def fiscal_rows(data) -> list[dict]:
         # ROIC = EBIT × (1 − מס) / (חוב + הון עצמי − מזומן)
         roic, ic_negative = None, False
         if op is not None and equity is not None:
+            nopat = op * (1 - (tax_rate if tax_rate is not None else C.DEFAULT_TAX))
             ic = (debt or 0) + equity - ((cash or 0) + (st or 0))
             if ic > 0:
-                roic = op * (1 - (tax_rate if tax_rate is not None else C.DEFAULT_TAX)) / ic
+                roic = nopat / ic
             elif op > 0:
                 roic, ic_negative = 1.0, True   # הון מושקע שלילי ורווח תפעולי חיובי = תשואה "אינסופית"
+            elif (debt or 0) + equity > 0:
+                roic = nopat / ((debt or 0) + equity)   # הפסד תפעולי וקופה גדולה מההון – בלי ניכוי המזומן
 
         pattern, near_zero = None, []
         if None not in (ocf, cfi_adj, cff):
@@ -196,6 +203,11 @@ def fiscal_rows(data) -> list[dict]:
         p = rows[i - 1] if i else None
         r["growth"] = _ratio(r["revenue"], p["revenue"]) - 1 if (p and (p["revenue"] or 0) > 1e6 and r["revenue"] is not None) else None
         r["dilution"] = _ratio(r["shares"], p["shares"]) - 1 if (p and (p["shares"] or 0) > 0 and r["shares"]) else None
+        if r["dilution"] is not None:
+            q = r["dilution"] + 1
+            # פיצול / איחוד מניות שלא הותאם לאחור (למשל 10:1) – לא דילול
+            if (q >= 1.8 and abs(q - round(q)) < 0.08 * q) or (q <= 0.55 and abs(1 / q - round(1 / q)) < 0.08 / q):
+                r["dilution"] = None
     return rows
 
 
@@ -398,6 +410,8 @@ def evaluate(data, latest: dict | None = None, sic=None, market_cap=None) -> dic
                       "cfi_raw": r["cfi"], "cff": r["cff"], "near_zero": r["near_zero"]} for r in path],
         },
         "metrics": m, "table": table, "risk": risk,
+        "inputs": {"fcf_now": fcf_now, "fcf_now_ttm": fcf_ttm is not None, "liquid": liquid, "debt": debt,
+                   "market_cap": mcap, "fiscal_year_end": last["end"]},
         "contradiction": contradiction, "why": why,
         "judge_by": "בשלב הזה כדאי לשפוט את החברה לפי " + JUDGE_BY[stage],
         "years": [{k: r[k] for k in ("end", "revenue", "growth", "op_margin", "gross_margin", "fcf", "fcf_margin",
