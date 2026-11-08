@@ -36,7 +36,7 @@ PERIODIC_FORMS = {"10-Q", "10-K", "20-F", "40-F", "10-KT"}
 STAT_KEYS = [
     "fiftyTwoWeekHigh", "fiftyTwoWeekLow", "beta", "dividendYield", "forwardPE", "trailingPE", "trailingEps",
     "forwardEps", "priceToBook", "shortPercentOfFloat", "heldPercentInstitutions", "heldPercentInsiders",
-    "averageVolume", "sharesOutstanding", "grossMargins", "operatingMargins", "profitMargins", "returnOnEquity",
+    "averageVolume", "sharesOutstanding", "impliedSharesOutstanding", "grossMargins", "operatingMargins", "profitMargins", "returnOnEquity",
     "recommendationMean", "targetMeanPrice", "targetHighPrice", "targetLowPrice", "numberOfAnalystOpinions",
     "regularMarketPreviousClose", "currentPrice", "enterpriseToEbitda", "pegRatio",
     # להשוואה מול נתוני ה-SEC (בדיקת אמינות)

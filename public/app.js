@@ -846,9 +846,14 @@
     const ourCash = (L.cash || 0) + (L.st_investments || 0);
     if (ourCash) cmp('מזומן והשקעות קצרות', ourCash, S.totalCash, 0.10, 0.25, ' Yahoo לא כולל ניירות ערך לטווח ארוך.');
     if (!bad(L.shares) && !bad(S.sharesOutstanding)) {
-      const d = Math.abs(L.shares - S.sharesOutstanding) / Math.max(L.shares, S.sharesOutstanding);
+      // ב-Yahoo, sharesOutstanding סופר לעיתים רק את סוג המניה הנסחר (למשל Class A בפלנטיר);
+      // impliedSharesOutstanding כולל את כל הסוגים – משווים לקרוב מבין השניים
+      const cands = [S.sharesOutstanding, S.impliedSharesOutstanding].filter((v) => !bad(v) && v > 0);
+      const gap = (v) => Math.abs(L.shares - v) / Math.max(L.shares, v);
+      const y = cands.reduce((a, b) => (gap(b) < gap(a) ? b : a));
+      const d = gap(y);
       rows.push({ id: 'x-sh', title: 'מספר מניות: תואם ל-Yahoo Finance', status: d <= 0.03 ? 'ok' : d <= 0.10 ? 'warn' : 'info',
-        detail: `SEC: ${big(L.shares).replace(/<[^>]+>/g, '')}, Yahoo: ${big(S.sharesOutstanding).replace(/<[^>]+>/g, '')} (פער ${(d * 100).toFixed(1)}%). פער קטן נובע לרוב מסוגי מניות שונים או ממועד הספירה.` });
+        detail: `SEC: ${bigx(L.shares).replace(/<[^>]+>/g, '')}, Yahoo: ${bigx(y).replace(/<[^>]+>/g, '')} (פער ${(d * 100).toFixed(1)}%). ${d <= 0.03 ? '' : 'פער כזה נובע לרוב מסוגי מניות שונים (Yahoo סופר לפעמים רק את הסוג הנסחר) או ממועד הספירה.'}` });
     }
     return rows.length ? rows : [{ id: 'x', title: 'השוואה מול Yahoo Finance', status: 'info', detail: 'אין מספיק נתונים להשוואה.' }];
   }
@@ -870,7 +875,7 @@
     const checks = all.map((c) => `<li><span class="st ${c.status}">${icon[c.status]}</span><div><b>${esc(c.title)}</b><span class="d">${esc(c.detail)}</span></div></li>`).join('');
     const src = (A.sources || []).map((r) => {
       const isMoney = r.key !== 'shares';
-      const val = isMoney ? money(r.value, A.currency) : big(r.value);
+      const val = isMoney ? money(r.value, A.currency) : bigx(r.value);
       const links = r.filings.slice(0, 4).map((f) => `<a href="${esc(f.url)}" target="_blank" rel="noopener" title="${esc(f.form_he)}, הוגש ${esc(f.filed)}">${n(esc(f.form))} ${dmy(f.period_end)}</a>`).join('');
       return `<tr><td>${esc(r.label)}<div class="how">${esc(r.how)}</div></td><td>${val}</td>
         <td><div class="flinks">${links || '<span class="muted">—</span>'}</div></td>
