@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html lang="he" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>מסלול – אבחון שלב חברה</title>
+<meta name="description" content="באיזה שלב באבולוציה החברה נמצאת: סטארטאפ, צמיחה, מעבר לרווח או ערך – ומה רמת הסיכון ביחס לשלב.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Frank+Ruhl+Libre:wght@500;700;900&family=IBM+Plex+Sans+Hebrew:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/styles.css">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='6' fill='%2314213D'/><path d='M6 22 L13 15 L18 19 L26 9' stroke='%23fff' stroke-width='3' fill='none' stroke-linecap='round' stroke-linejoin='round'/></svg>">
+</head>
+<body>
+<header class="topbar">
+  <div class="wrap topbar-in">
+    <a class="brand" href="/" id="brand">
+      <svg viewBox="0 0 32 32" aria-hidden="true"><rect width="32" height="32" rx="6" fill="currentColor"/><path d="M6 22 L13 15 L18 19 L26 9" stroke="#fff" stroke-width="3" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      <span class="brand-name">מסלול</span>
+      <span class="brand-sub">אבחון שלב חברה</span>
+    </a>
+    <form class="search" id="search" autocomplete="off" role="search">
+      <input id="q" type="search" placeholder="טיקר או שם חברה, למשל LMND" aria-label="חיפוש מניה" spellcheck="false">
+      <button type="submit">אבחן</button>
+      <ul class="suggest" id="suggest" role="listbox" hidden></ul>
+    </form>
+  </div>
+</header>
+
+<main>
+  <!-- דף הבית -->
+  <section id="home" class="wrap">
+    <div class="hero">
+      <h1>באיזה שלב החברה נמצאת?</h1>
+      <p class="lead">כל חברה עוברת מסלול: סטארטאפ בלי הכנסות, חברת צמיחה שמכניסה כסף ועדיין מפסידה,
+        מעבר לרווח נקי, ובסוף חברת ערך בשלה. כל שלב מתמחרים אחרת, ולכל שלב סיכון אחר.
+        הכלי קורא את הדוחות הרשמיים של החברה ב-SEC ומאבחן איפה היא עומדת – ואם היא על סף מעבר.</p>
+      <div class="hero-track" id="heroTrack"></div>
+      <div class="examples">
+        <span class="muted">דוגמאות מהסרטון:</span>
+        <div id="examples"></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- תצוגת מניה -->
+  <section id="view" hidden>
+    <div class="wrap">
+      <div id="status"></div>
+      <div id="mast"></div>
+    </div>
+    <nav class="subnav" id="subnav">
+      <div class="wrap">
+        <a href="#s-overview">סקירה</a>
+        <a href="#s-chart">גרף</a>
+        <a href="#s-stats">נתונים</a>
+        <a href="#s-fin">דוחות</a>
+        <a href="#s-news">עדכונים</a>
+        <a href="#s-profile">על החברה</a>
+      </div>
+    </nav>
+    <div class="wrap">
+      <section id="s-overview" class="block"></section>
+      <section id="s-chart" class="block"></section>
+      <section id="s-stats" class="block"></section>
+      <section id="s-fin" class="block"></section>
+      <section id="s-news" class="block"></section>
+      <section id="s-profile" class="block"></section>
+    </div>
+  </section>
+</main>
+
+<footer class="wrap foot">
+  כלי לימודי ולא ייעוץ השקעות. השלבים והספים נקבעו לפי ההיגיון בסרטון של דביר שלום על האבולוציה של חברה –
+  הנוסחאות המדויקות שלו נלמדות בקורס. נתונים: דוחות רשמיים מ-SEC EDGAR, מחירים, פרופיל וחדשות מ-Yahoo Finance ו-Google News.
+  תיאורים וכותרות מתורגמים אוטומטית. תמיד לאמת מול הדוח עצמו.
+</footer>
+
+<script src="/vendor/echarts.min.js"></script>
+<script src="/app.js"></script>
+</body>
+</html>

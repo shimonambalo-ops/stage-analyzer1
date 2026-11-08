@@ -33,6 +33,14 @@ SECTOR_HE = {
 
 PERIODIC_FORMS = {"10-Q", "10-K", "20-F", "40-F", "10-KT"}
 
+STAT_KEYS = [
+    "fiftyTwoWeekHigh", "fiftyTwoWeekLow", "beta", "dividendYield", "forwardPE", "trailingPE", "trailingEps",
+    "forwardEps", "priceToBook", "shortPercentOfFloat", "heldPercentInstitutions", "heldPercentInsiders",
+    "averageVolume", "sharesOutstanding", "grossMargins", "operatingMargins", "profitMargins", "returnOnEquity",
+    "recommendationMean", "targetMeanPrice", "targetHighPrice", "targetLowPrice", "numberOfAnalystOpinions",
+    "regularMarketPreviousClose", "currentPrice", "enterpriseToEbitda", "pegRatio",
+]
+
 
 # ---------------------------------------------------------------------------
 # Yahoo
@@ -54,6 +62,17 @@ def fetch_yahoo_profile(ticker: str) -> dict:
         ]:
             if info.get(src) not in (None, ""):
                 out[dst] = info[src]
+        stats = {}
+        for k in STAT_KEYS:
+            v = info.get(k)
+            if isinstance(v, (int, float)) and v == v:
+                stats[k] = float(v)
+        # yfinance החליף בעבר את dividendYield מעשרוני לאחוזים – מנרמלים לעשרוני
+        if "dividendYield" in stats and stats["dividendYield"] > 1:
+            stats["dividendYield"] /= 100
+        out["stats"] = stats
+        if info.get("recommendationKey"):
+            out["recommendation"] = info["recommendationKey"]
     except Exception:
         pass
     try:
@@ -77,11 +96,17 @@ def fetch_yahoo_profile(ticker: str) -> dict:
 # ---------------------------------------------------------------------------
 # SEC
 # ---------------------------------------------------------------------------
-def fetch_sec_profile(cik: int, user_agent: str) -> dict:
-    out: dict = {}
+def fetch_submissions(cik: int, user_agent: str) -> dict | None:
     try:
-        sub = _get_json(SUBMISSIONS_URL.format(cik=cik), user_agent)
+        return _get_json(SUBMISSIONS_URL.format(cik=cik), user_agent)
     except Exception:
+        return None
+
+
+def fetch_sec_profile(cik: int, user_agent: str, sub: dict | None = None) -> dict:
+    out: dict = {}
+    sub = sub if sub is not None else fetch_submissions(cik, user_agent)
+    if not sub:
         return out
     out["sic"] = sub.get("sicDescription")
     out["exchanges"] = [e for e in (sub.get("exchanges") or []) if e]
@@ -142,6 +167,18 @@ def translate_he(text: str) -> str | None:
         return GoogleTranslator(source="auto", target="iw").translate(text)
     except Exception:
         return None
+
+
+def translate_many_he(texts: list[str]) -> list[str | None]:
+    """מתרגם כמה שורות בבקשה אחת (מופרדות בשורה חדשה). אם המבנה נשבר – מחזיר None לכולן."""
+    if not texts:
+        return []
+    joined = "\n".join(t.replace("\n", " ") for t in texts)
+    res = translate_he(joined)
+    if not res:
+        return [None] * len(texts)
+    parts = [p.strip() for p in res.split("\n")]
+    return parts if len(parts) == len(texts) else [None] * len(texts)
 
 
 def short_summary(text: str, max_sentences: int = 4) -> str:

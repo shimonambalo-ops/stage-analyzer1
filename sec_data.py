@@ -331,7 +331,7 @@ def build_company_data(facts: dict, ticker: str, name: str, cik: int) -> Company
     ):
         flow_kind, period_months = "annual", 12
         warnings.append(
-            "החברה מגישה דוחות שנתיים בלבד (כנראה 20-F של חברה זרה) – האבחון מבוסס על נתונים שנתיים ופחות מדויק."
+            "החברה מגישה דוחות שנתיים בלבד (כנראה דוח \u206620-F\u2069 של חברה זרה) – האבחון מבוסס על נתונים שנתיים ופחות מדויק."
         )
 
     flows = {}

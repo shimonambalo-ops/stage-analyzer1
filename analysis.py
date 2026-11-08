@@ -657,3 +657,91 @@ def status_narrative(dg: "Diagnosis", name: str) -> list[str]:
 
     out.append(f"רמת הסיכון ביחס לשלב: {dg.risk_level} ({dg.risk_score}/100).")
     return out
+
+
+# ---------------------------------------------------------------------------
+# "על הסף" – קרבה לגבול בין שלבים + כיוון התנועה
+# ---------------------------------------------------------------------------
+def _trend_eta(values: list, threshold: float, max_periods: int = 8):
+    """
+    מתאים קו מגמה לערכים האחרונים ומחזיר (שיפוע, תקופות עד חציית הסף) – או None אם לא נחצה בטווח.
+    """
+    v = [x for x in values if x is not None and not pd.isna(x) and np.isfinite(x)]
+    if len(v) < 3:
+        return None, None
+    x = np.arange(len(v), dtype=float)
+    slope, intercept = np.polyfit(x, np.array(v, dtype=float), 1)
+    last = slope * (len(v) - 1) + intercept
+    if slope == 0:
+        return slope, None
+    k = (threshold - last) / slope
+    if 0 < k <= max_periods:
+        return slope, int(math.ceil(k))
+    return slope, None
+
+
+def edge_signals(dg: "Diagnosis", cfg: Config | None = None) -> list[dict]:
+    """
+    מחזיר רשימת התראות "על הסף": חברה שקרובה לגבול של שלב אחר ונעה לכיוונו.
+    כל התראה: to (קוד שלב), title, text, eta (רבעונים, אם ניתן להעריך), direction (up/down).
+    """
+    cfg = cfg or Config()
+    m = dg.metrics
+    if m is None or m.empty:
+        return []
+    L = dg.latest
+    stage = dg.stage
+    out = []
+    g = L.get("revenue_yoy")
+    g_hist = list(m["revenue_yoy"].replace([np.inf, -np.inf], np.nan).dropna().iloc[-4:].values)
+    rev = L.get("revenue_ttm")
+    rev_hist = list(m["revenue_ttm"].dropna().iloc[-4:].values)
+
+    def add(to, title, text, eta=None, direction="up"):
+        out.append({"to": to, "to_he": STAGES[to]["he"], "title": title, "text": text, "eta": eta, "direction": direction})
+
+    # סטארטאפ שמתקרב לסף ההכנסות
+    if stage == "startup" and rev is not None and not pd.isna(rev) and rev > 0.3 * cfg.startup_rev:
+        _, eta = _trend_eta(rev_hist, cfg.startup_rev)
+        if eta or rev > 0.6 * cfg.startup_rev:
+            add("startup_to_growth", "ההכנסות מתקרבות לסף",
+                f"הכנסות של ${rev/1e6:.0f}M ב-12 חודשים, מול סף של ${cfg.startup_rev/1e6:.0f}M.", eta)
+
+    finite_g = g is not None and not pd.isna(g) and np.isfinite(g)
+
+    # הפסדית שמתקרבת לרווח
+    if dg.approaching_profit and dg.breakeven.get("months"):
+        q = max(1, round(dg.breakeven["months"] / 3))
+        add("inflection", "מתקרבת לרווח נקי",
+            "ההפסדים מצטמצמים בעקביות, ולפי המגמה הרווח הנקי השנתי יהפוך לחיובי.", q)
+
+    # רווחית עם שולי רווח דקים ורווח יורד – סכנת חזרה להפסד
+    if stage in ("inflection", "growth_profit", "maturing", "value", "value_to_growth"):
+        nm = L.get("net_margin_ttm")
+        ni_q = list(m["net_income_q"].dropna().iloc[-4:].values)
+        if nm is not None and not pd.isna(nm) and 0 < nm < 0.04 and len(ni_q) >= 3:
+            slope, _ = _trend_eta(ni_q, 0)
+            if slope is not None and slope < 0:
+                add("growth_loss" if finite_g and g >= cfg.growth_min else "loss_slow", "סכנת חזרה להפסד",
+                    f"שולי הרווח דקים ({nm:.1%}) והרווח הרבעוני יורד.", None, "down")
+
+    if finite_g and len(g_hist) >= 3:
+        slope, _ = _trend_eta(g_hist, 0)
+        # צמיחה שמאטה לכיוון סף הצמיחה
+        if stage in ("growth_profit", "growth_loss", "inflection", "value_to_growth") and g < cfg.growth_min + 0.10 and slope < 0:
+            _, eta = _trend_eta(g_hist, cfg.growth_min)
+            to = "maturing" if (L.get("net_income_ttm") or 0) > 0 else "loss_slow"
+            add(to, "הצמיחה מאטה לכיוון הסף",
+                f"צמיחה של {g:.0%} בשנה (סף חברת צמיחה: {cfg.growth_min:.0%}) – יורדת ברבעונים האחרונים.", eta, "down")
+        # בשלה שהצמיחה שלה מאטה לכיוון ערך
+        if stage == "maturing" and g < cfg.value_max + 0.05 and slope < 0:
+            _, eta = _trend_eta(g_hist, cfg.value_max)
+            add("value", "מתקרבת לשלב הערך",
+                f"צמיחה של {g:.0%} בשנה (סף חברת ערך: {cfg.value_max:.0%}) – ממשיכה לרדת.", eta, "down")
+        # האצה מחדש לכיוון צמיחה
+        if stage in ("maturing", "value", "loss_slow") and g > cfg.growth_min - 0.08 and slope > 0:
+            _, eta = _trend_eta(g_hist, cfg.growth_min)
+            to = "value_to_growth" if stage != "loss_slow" else "growth_loss"
+            add(to, "הצמיחה מאיצה",
+                f"צמיחה של {g:.0%} בשנה ועולה – מתקרבת לסף חברת צמיחה ({cfg.growth_min:.0%}).", eta, "up")
+    return out
