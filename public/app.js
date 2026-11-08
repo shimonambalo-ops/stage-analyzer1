@@ -534,6 +534,20 @@
       </div></div>${analyst}`;
   }
 
+  // חוב זניח (פחות מ-2% מהקופה, או שלא דווח) – לא מציירים קו שנראה כמו נתון
+  function debtIsNegligible(A) {
+    const d = (A.series.debt || []).filter((x) => !bad(x));
+    const l = (A.series.liquid || []).filter((x) => !bad(x));
+    if (!d.length) return true;
+    return Math.max(...d) < 0.02 * Math.max(1, ...l);
+  }
+  function debtNote(A) {
+    if (!debtIsNegligible(A)) return '';
+    const d = (A.series.debt || []).filter((x) => !bad(x));
+    const txt = d.length ? `החוב הפיננסי זניח (${plain(money(A.latest.debt))}) ולכן לא מוצג בגרף.` : 'לא נמצא חוב פיננסי בדוחות.';
+    return `<div class="note" style="margin:-4px 0 6px">${txt}</div>`;
+  }
+
   function renderFin(A) {
     const Y = A.yearly || [];
     const cols = Y.map((r) => `<th>12 ח' עד ${dmy(r.end)}</th>`).join('');
@@ -554,7 +568,7 @@
       <div class="grid2 even" style="margin-top:22px">
         <div class="card"><h3 class="h3">הכנסות</h3><div class="chart sm" id="cRev"></div></div>
         <div class="card"><h3 class="h3">רווח נקי ותזרים חופשי</h3><div class="chart sm" id="cNi"></div></div>
-        <div class="card"><h3 class="h3">מזומן מול חוב</h3><div class="chart sm" id="cCash"></div></div>
+        <div class="card"><h3 class="h3">מזומן מול חוב</h3>${debtNote(A)}<div class="chart sm" id="cCash"></div></div>
         <div class="card"><h3 class="h3">מספר מניות (דילול)</h3><div class="chart sm" id="cSh"></div></div>
       </div>`;
 
@@ -576,10 +590,11 @@
       { type: 'line', name: 'רווח 12 ח\'', data: s.net_income_ttm, showSymbol: false, lineStyle: { color: C.ink, width: 2.2 }, itemStyle: { color: C.ink } },
       { type: 'line', name: 'תזרים חופשי 12 ח\'', data: s.fcf_ttm, showSymbol: false, lineStyle: { color: '#0E7490', type: 'dashed' }, itemStyle: { color: '#0E7490' } },
     ] }));
-    baseChart($('#cCash')).setOption(common({ series: [
-      { type: 'line', name: 'מזומן וני"ע', data: s.liquid, showSymbol: false, connectNulls: true, lineStyle: { color: C.green, width: 2.2 }, itemStyle: { color: C.green }, areaStyle: { color: 'rgba(26,147,111,.08)' } },
-      { type: 'line', name: 'חוב', data: s.debt, showSymbol: false, connectNulls: true, lineStyle: { color: C.red, width: 2.2 }, itemStyle: { color: C.red } },
-    ] }));
+    const cashSeries = [
+      { type: 'line', name: 'מזומן וני"ע', data: s.liquid, showSymbol: false, connectNulls: false, lineStyle: { color: C.green, width: 2.2 }, itemStyle: { color: C.green }, areaStyle: { color: 'rgba(26,147,111,.08)' } },
+    ];
+    if (!debtIsNegligible(A)) cashSeries.push({ type: 'line', name: 'חוב', data: s.debt, showSymbol: false, connectNulls: false, lineStyle: { color: C.red, width: 2.2 }, itemStyle: { color: C.red } });
+    baseChart($('#cCash')).setOption(common({ series: cashSeries }));
     baseChart($('#cSh')).setOption(common({
       tooltip: { ...tip, valueFormatter: (v) => (bad(v) ? '—' : Intl.NumberFormat('en-US', { notation: 'compact', maximumFractionDigits: 2 }).format(v)) },
       yAxis: { type: 'value', scale: true, axisLabel: { color: C.muted, formatter: (v) => Intl.NumberFormat('en-US', { notation: 'compact' }).format(v) }, splitLine: { lineStyle: { color: C.grid } } },
