@@ -55,6 +55,11 @@ def _static(path, start_response):
             start_response("404 Not Found", [("Content-Type", "text/plain")])
             return [b"not found"]
         full = os.path.join(PUBLIC, "index.html")  # ניתוב צד-לקוח
+        if not os.path.isfile(full):
+            # ב-Vercel קבצי public/ מוגשים מה-CDN ולא תמיד נכללים בפונקציה – מפנים לדף הבית עם הטיקר
+            t = rel.strip("/")
+            start_response("302 Found", [("Location", f"/?t={t}" if t else "/"), ("Cache-Control", "no-store")])
+            return [b""]
     ext = os.path.splitext(full)[1]
     ctype = TYPES.get(ext) or mimetypes.guess_type(full)[0] or "application/octet-stream"
     if ctype.startswith("text/") or ctype in ("application/javascript", "application/json", "image/svg+xml"):

@@ -1,1 +1,6 @@
-{ "$schema": "https://openapi.vercel.sh/vercel.json" }
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "rewrites": [
+    { "source": "/:ticker([A-Za-z0-9\\-]{1,10})", "destination": "/index.html" }
+  ]
+}
