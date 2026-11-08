@@ -139,6 +139,13 @@ def analyze(ticker: str) -> dict:
     except Exception as e:  # המנוע לא יפיל את כל העמוד
         engine = {"suitable": True, "stage": None, "reason": f"שגיאה בחישוב מנוע השלבים: {e}"}
     engine["sic"], engine["sic_he"] = sub.get("sic"), sub.get("sicDescription")
+    narrative = analysis.status_narrative(dg, data.name)
+    if engine.get("stage"):
+        # שתי השורות הראשונות (Dickinson ל-12 חודשים, Damodaran) ושורת הסיכון מוחלפות בתוצאת המנוע
+        body = [x for x in narrative if not x.startswith(("לפי מודל Dickinson", "לפי מחזור החיים של Damodaran", "רמת הסיכון ביחס לשלב"))]
+        R = engine["risk"]
+        narrative = ([f"{data.name} בשלב \"{engine['stage_he']}\" (ביטחון {engine['confidence']}%)."] + body
+                     + [f"רמת הסיכון ביחס לשלב: {R['level']} ({R['score']}/100)."])
     m = dg.metrics
 
     change_1d = None
@@ -180,7 +187,7 @@ def analyze(ticker: str) -> dict:
                  "positives": [{"pts": p, "text": t} for p, t in dg.positives]},
         "runway": dg.runway, "breakeven": dg.breakeven, "latest": dg.latest,
         "scores": analysis.scorecards(dg),
-        "narrative": analysis.status_narrative(dg, data.name),
+        "narrative": narrative,
         "edges": analysis.edge_signals(dg, cfg),
         "events": dg.events.to_dict("records") if len(dg.events) else [],
         "series": series, "prices": _price_series(prices),
@@ -190,6 +197,10 @@ def analyze(ticker: str) -> dict:
         "damodaran_stages": [{"code": k, "he": v["he"], "rule": v["rule"]} for k, v in analysis.DAMODARAN.items()],
         "dickinson_table": [{"pattern": "".join(k), "stage": v, "he": analysis.STAGES[v]["he"]} for k, v in analysis.DICKINSON.items()],
         "engine": engine,
+        "engine_model": {"weights": stage_engine.C.WEIGHTS, "expect": stage_engine.EXPECT_TEXT,
+                         "labels": stage_engine.LABELS, "stages": stage_engine.C.STAGES,
+                         "dickinson_he": stage_engine.C.DICKINSON_HE,
+                         "affinity": stage_engine.C.DICKINSON_AFFINITY},
         "concepts": data.concepts_used,
         "checks": verify.checks(data, dg),
         "sources": verify.sources(data, dg),

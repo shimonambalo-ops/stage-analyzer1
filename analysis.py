@@ -32,13 +32,13 @@ class Config:
 
 # שלבי Dickinson (2011) + השלב המקביל אצל Damodaran
 STAGES = {
-    "introduction": {"he": "היכרות", "en": "Introduction", "order": 0, "color": "#7C3AED",
+    "introduction": {"he": "סטארט-אפ", "en": "Introduction", "order": 0, "color": "#7C3AED",
                      "damodaran": "סטארטאפ / צמיחה צעירה"},
     "growth":       {"he": "צמיחה", "en": "Growth", "order": 1, "color": "#2563EB",
                      "damodaran": "צמיחה גבוהה"},
-    "mature":       {"he": "בשלות", "en": "Mature", "order": 2, "color": "#15803D",
+    "mature":       {"he": "בוגרת", "en": "Mature", "order": 2, "color": "#15803D",
                      "damodaran": "צמיחה בשלה / בשלות יציבה"},
-    "shakeout":     {"he": "התנערות", "en": "Shake-out", "order": 3, "color": "#C2410C",
+    "shakeout":     {"he": "טלטלה", "en": "Shake-out", "order": 3, "color": "#C2410C",
                      "damodaran": "מעבר בין שלבים / ארגון מחדש"},
     "decline":      {"he": "דעיכה", "en": "Decline", "order": 4, "color": "#B91C1C",
                      "damodaran": "דעיכה"},

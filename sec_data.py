@@ -590,13 +590,22 @@ def _scan_da(facts: dict):
     חלופה אחרונה לפחת והפחתות: חברות רבות משתמשות בשדה ייחודי (למשל crwd:DepreciationAndAmortization...).
     מחפשים בכל מרחבי השמות שדה שמתחיל ב-Depreciation וכולל Amortization, ובוחרים את בעל הכיסוי הטוב והערך הגדול.
     """
+    for banned in (("accumulated", "deferred", "tax", "impairment", "debt", "financing", "lease"),
+                   ("accumulated", "tax", "debt", "financing")):
+        res = _scan_da_pass(facts, banned)
+        if res is not None:
+            return res
+    return None
+
+
+def _scan_da_pass(facts: dict, banned):
     best = None
     for ns, concepts in facts.get("facts", {}).items():
         for c in concepts:
             lc = c.lower()
             if not lc.startswith("depreciation") or "amortization" not in lc:
                 continue
-            if any(w in lc for w in ("accumulated", "deferred", "tax", "impairment", "debt", "financing", "lease")):
+            if any(w in lc for w in banned):
                 continue
             df, unit = _facts_df(facts, ns, c)
             if df.empty or unit != "USD":

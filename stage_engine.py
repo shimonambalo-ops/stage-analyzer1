@@ -506,7 +506,7 @@ def _risk(stage, m):
 
 
 def _why(stage, dk_stage, vote_rows, table):
-    pats = " → ".join(r["pattern"] for r in vote_rows)
+    pats = " ← ".join(r["pattern"] for r in vote_rows)
     s1 = (f"לפי Dickinson, ב-{len(vote_rows)} השנים האחרונות ({pats}) החברה ב\"{C.DICKINSON_HE[dk_stage]}\": "
           f"{DICKINSON_WHY[dk_stage]}.")
     good = [t["label"] for t in table if t["ok"]]

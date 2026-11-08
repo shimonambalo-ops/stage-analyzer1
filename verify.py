@@ -62,7 +62,7 @@ def sources(data, dg) -> list[dict]:
     sec_items = [i for i in ("securities_total", "st_investments", "lt_securities") if i in used]
     debt_items = [i for i in ("debt_total", "debt_noncurrent", "debt_current") if i in used]
     return [
-        entry("revenue_ttm", "הכנסות, 12 חודשים", L.get("revenue_ttm"), ["revenue"], "Damodaran: צמיחת ההכנסות. " + ttm_how),
+        entry("revenue_ttm", "הכנסות, 12 חודשים", L.get("revenue_ttm"), ["revenue"], "בסיס לצמיחת ההכנסות. " + ttm_how),
         entry("net_income_ttm", "רווח נקי, 12 חודשים", L.get("net_income_ttm"), ["net_income"], ttm_how),
         entry("op_income_ttm", "רווח תפעולי, 12 חודשים", L.get("op_income_ttm"), ["op_income"], ttm_how),
         entry("fcf_ttm", "תזרים חופשי, 12 חודשים", L.get("fcf_ttm"), ["ocf", "capex"], "תזרים מפעילות שוטפת פחות השקעות ברכוש קבוע, " + ttm_how),
