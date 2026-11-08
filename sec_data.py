@@ -52,6 +52,16 @@ CONCEPTS: dict[str, list[tuple[str, str]]] = {
         ("ifrs-full", "CashFlowsFromUsedInOperatingActivities"),
         ("ifrs-full", "CashFlowsFromUsedInOperations"),
     ],
+    "cfi": [
+        ("us-gaap", "NetCashProvidedByUsedInInvestingActivities"),
+        ("us-gaap", "NetCashProvidedByUsedInInvestingActivitiesContinuingOperations"),
+        ("ifrs-full", "CashFlowsFromUsedInInvestingActivities"),
+    ],
+    "cff": [
+        ("us-gaap", "NetCashProvidedByUsedInFinancingActivities"),
+        ("us-gaap", "NetCashProvidedByUsedInFinancingActivitiesContinuingOperations"),
+        ("ifrs-full", "CashFlowsFromUsedInFinancingActivities"),
+    ],
     "capex": [
         ("us-gaap", "PaymentsToAcquirePropertyPlantAndEquipment"),
         ("us-gaap", "PaymentsToAcquireProductiveAssets"),
@@ -123,7 +133,7 @@ CONCEPTS: dict[str, list[tuple[str, str]]] = {
     ],
 }
 
-FLOW_ITEMS = ["revenue", "net_income", "op_income", "ocf", "capex", "sbc"]
+FLOW_ITEMS = ["revenue", "net_income", "op_income", "ocf", "cfi", "cff", "capex", "sbc"]
 INSTANT_ITEMS = ["cash", "st_investments", "securities_total", "lt_securities",
                  "debt_total", "debt_noncurrent", "debt_current", "shares", "assets", "liabilities"]
 

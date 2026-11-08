@@ -1,8 +1,12 @@
 """
-מנוע האבחון: שלב החברה לפי מסגרת "האבולוציה של חברה" (סטארטאפ → צמיחה → ערך),
-מדדי בריאות (קופה, חוב, דילול, צמצום הפסדים), אירועי מעבר לרווח נקי, ורמת סיכון.
+מנוע האבחון: שלב החברה במחזור החיים, מדדי בריאות, אירועי מעבר לרווח נקי ורמת סיכון.
 
-כל הספים נמצאים ב-Config וניתנים לכיוונון מהממשק.
+המודל:
+  • שלב במחזור החיים – Dickinson, V. (2011). "Cash Flow Patterns as a Proxy for Firm Life Cycle",
+    The Accounting Review 86(6). השלב נקבע לפי הסימן (+/−) של שלושת חלקי דוח תזרים המזומנים
+    ב-12 החודשים האחרונים: פעילות שוטפת, השקעות ומימון. 8 צירופים → 5 שלבים.
+  • פרשנות והערכת שווי לפי שלב – Damodaran, A. (2024). "The Corporate Life Cycle".
+  • שכבה נוספת: מעבר לרווח נקי (הדוגמאות מהסרטון של דביר שלום) ומגמת צמצום הפסדים.
 """
 from __future__ import annotations
 
@@ -17,84 +21,125 @@ import pandas as pd
 # ---------------------------------------------------------------------------
 @dataclass
 class Config:
-    startup_rev: float = 25e6        # הכנסות TTM מתחת לזה = סטארטאפ
-    early_rev: float = 1e9           # עד כאן חברה "צעירה": הכפלת הכנסות מתחת לסף = מעבר סטארטאפ→צמיחה
-    growth_min: float = 0.20         # צמיחת הכנסות שנתית מעליה = חברת צמיחה
-    value_max: float = 0.08          # צמיחה מתחת לזה = חברת ערך (אם רווחית)
-    lookback_cross_q: int = 8        # כמה רבעונים אחורה בודקים "חצתה את סף הסטארטאפ לאחרונה"
-    inflection_window_q: int = 4     # כמה רבעונים אחרי המעבר לרווח עדיין מסומנים כ"מעבר לרווח"
+    startup_rev: float = 25e6        # מתחת לזה – "בלי הכנסות משמעותיות" (לאירועי מעבר לרווח ולתיאור)
+    growth_min: float = 0.20         # לשימוש בציונים ובתיאור בלבד – לא קובע שלב
+    value_max: float = 0.08
+    inflection_window_q: int = 4
     breakeven_fit_q: int = 6         # כמה רבעונים להתאמת מגמת צמצום ההפסד
     approaching_q: int = 4           # הערכת רווח תוך X רבעונים = "מתקרבת לרווח נקי"
+    edge_horizon_q: int = 4          # "על הסף" = מגמה שמחליפה סימן של תזרים בתוך X רבעונים
 
 
+# שלבי Dickinson (2011) + השלב המקביל אצל Damodaran
 STAGES = {
-    "startup":           {"he": "סטארטאפ",                       "order": 0, "color": "#7C3AED"},
-    "startup_to_growth": {"he": "מעבר: סטארטאפ ← צמיחה",         "order": 1, "color": "#A855F7"},
-    "growth_loss":       {"he": "צמיחה הפסדית",                   "order": 2, "color": "#F59E0B"},
-    "inflection":        {"he": "מעבר לרווח נקי (Money Time)",    "order": 3, "color": "#10B981"},
-    "growth_profit":     {"he": "צמיחה רווחית",                   "order": 4, "color": "#22C55E"},
-    "maturing":          {"he": "מעבר: צמיחה ← ערך",             "order": 5, "color": "#0EA5E9"},
-    "value":             {"he": "ערך",                            "order": 6, "color": "#2563EB"},
-    "value_to_growth":   {"he": "מעבר: ערך ← צמיחה (האצה מחדש)", "order": 7, "color": "#14B8A6"},
-    "loss_slow":         {"he": "הפסדית בצמיחה איטית",            "order": 8, "color": "#EF4444"},
-    "declining":         {"he": "התכווצות",                       "order": 9, "color": "#B91C1C"},
-    "unknown":           {"he": "אין מספיק נתונים",               "order": 10, "color": "#9CA3AF"},
+    "introduction": {"he": "היכרות", "en": "Introduction", "order": 0, "color": "#7C3AED",
+                     "damodaran": "סטארטאפ / צמיחה צעירה"},
+    "growth":       {"he": "צמיחה", "en": "Growth", "order": 1, "color": "#2563EB",
+                     "damodaran": "צמיחה גבוהה"},
+    "mature":       {"he": "בשלות", "en": "Mature", "order": 2, "color": "#15803D",
+                     "damodaran": "צמיחה בשלה / בשלות יציבה"},
+    "shakeout":     {"he": "התנערות", "en": "Shake-out", "order": 3, "color": "#C2410C",
+                     "damodaran": "מעבר בין שלבים / ארגון מחדש"},
+    "decline":      {"he": "דעיכה", "en": "Decline", "order": 4, "color": "#B91C1C",
+                     "damodaran": "דעיכה"},
+    "unknown":      {"he": "אין מספיק נתונים", "en": "Unknown", "order": 5, "color": "#9CA3AF",
+                     "damodaran": "—"},
+}
+
+# Damodaran (2024) – שישה שלבים לפי צמיחת הכנסות ורווחיות.
+# הספים הם התרגום שלנו לתיאורים האיכותיים שלו (הוא לא מפרסם ספים מספריים קבועים).
+DAMODARAN = {
+    "startup":       {"he": "סטארטאפ", "order": 0,
+                      "rule": "הכנסות זניחות (מתחת ל-25 מיליון דולר בשנה)",
+                      "value": "תמחור לפי פוטנציאל וסיפור. מה לבדוק: קופה, קצב שריפה ואבני דרך."},
+    "young_growth":  {"he": "צמיחה צעירה", "order": 1,
+                      "rule": "יש הכנסות, אבל הפעילות עדיין מפסידה",
+                      "value": "מכפיל מכירות מול גודל השוק הפוטנציאלי. השאלה המרכזית: האם ומתי יגיעו לרווח."},
+    "high_growth":   {"he": "צמיחה גבוהה", "order": 2,
+                      "rule": "רווח תפעולי, וצמיחת הכנסות של 20% ומעלה",
+                      "value": "מכפיל רווח עתידי ומכפיל מכירות מול קצב הצמיחה (למשל PEG)."},
+    "mature_growth": {"he": "צמיחה בשלה", "order": 3,
+                      "rule": "רווח תפעולי, וצמיחה של 8%–20%",
+                      "value": "מכפילי רווח ותזרים. האם הצמיחה נשמרת או מאטה."},
+    "mature_stable": {"he": "בשלות יציבה", "order": 4,
+                      "rule": "רווח תפעולי, וצמיחה מתחת ל-8%",
+                      "value": "תזרים חופשי, דיבידנד וקנייה עצמית. הערכה לפי תזרים יציב."},
+    "decline":       {"he": "דעיכה", "order": 5,
+                      "rule": "ההכנסות יורדות",
+                      "value": "ערך הנכסים, יכולת החלוקה למשקיעים ויכולת החזר החוב."},
+}
+
+
+def damodaran_stage(L: dict, cfg: "Config") -> str | None:
+    rev, g = L.get("revenue_ttm"), L.get("revenue_yoy")
+    op = L.get("op_income_ttm")
+    if op is None or pd.isna(op):
+        op = L.get("net_income_ttm")
+    if rev is None or pd.isna(rev) or rev < cfg.startup_rev:
+        return "startup" if (op is not None and not pd.isna(op)) else None
+    if g is not None and not pd.isna(g) and np.isfinite(g) and g < 0:
+        return "decline"
+    if op is None or pd.isna(op):
+        return None
+    if op < 0:
+        return "young_growth"
+    if g is None or pd.isna(g):
+        return None
+    if not np.isfinite(g) or g >= cfg.growth_min:
+        return "high_growth"
+    return "mature_growth" if g >= cfg.value_max else "mature_stable"
+
+
+# 8 הצירופים של Dickinson: (פעילות שוטפת, השקעות, מימון) → שלב
+DICKINSON = {
+    ("-", "-", "+"): "introduction",
+    ("+", "-", "+"): "growth",
+    ("+", "-", "-"): "mature",
+    ("-", "-", "-"): "shakeout",
+    ("+", "+", "+"): "shakeout",
+    ("+", "+", "-"): "shakeout",
+    ("-", "+", "+"): "decline",
+    ("-", "+", "-"): "decline",
 }
 
 STAGE_EXPLAIN = {
-    "startup": (
-        "חברה עם רעיון ומוצר בפיתוח, בלי הכנסות משמעותיות. אין מכפילים, ולכן מעריכים אותה "
-        "לפי המאזן: כמה מזומן יש, כמה היא שורפת בשנה, וכמה זמן נשאר לה עד שתצטרך לגייס (ולדלל)."
+    "introduction": (
+        "הפעילות השוטפת שורפת מזומן, החברה משקיעה, ומממנת את עצמה מגיוסי הון או חוב. "
+        "בשלב הזה הערך נשען על הסיפור והפוטנציאל, ולא על רווחים. "
+        "השאלה המרכזית היא הישרדות – כמה זמן הקופה מחזיקה, וכמה דילול יידרש עד שהפעילות תייצר מזומן."
     ),
-    "startup_to_growth": (
-        "החברה התחילה להכניס כסף לראשונה מהמוצר. ההכנסות עדיין קטנות ביחס לשווי, אבל הקצב חד. "
-        "השאלה המרכזית: האם ההכנסות הן מהמוצר עצמו או מתמלוגים/שיתופי פעולה, והאם הקופה מחזיקה עד שהמנוע יתפוס."
+    "growth": (
+        "הפעילות השוטפת כבר מייצרת מזומן, אבל החברה משקיעה יותר ממה שהיא מייצרת וממשיכה לגייס. "
+        "מתמחרים לפי קצב הצמיחה ושיפור השוליים. "
+        "הסיכון העיקרי: האטה בצמיחה, שתוביל לכיווץ מכפילים."
     ),
-    "growth_loss": (
-        "חברת צמיחה שכבר מכניסה כסף ממשי וצומחת מהר, אבל עדיין הפסדית. לפי השיטה מחפשים צמצום הפסדים "
-        "עקבי, מאזן עם יותר מזומן מחוב, והערכה מתי תגיע לרווח נקי – והאם הקופה מספיקה עד אז."
+    "mature": (
+        "הפעילות מייצרת מזומן שמממן את ההשקעות, והעודף חוזר למשקיעים – דיבידנד, קנייה עצמית או החזר חוב. "
+        "מתמחרים לפי רווח ותזרים חופשי. "
+        "Dickinson מצאה שהשוק נוטה לתמחר חברות בשלות בחסר."
     ),
-    "inflection": (
-        "החברה עברה לאחרונה לרווח נקי ב-12 החודשים האחרונים (Money Time). זה האירוע שבדוגמאות מהסרטון "
-        "(Palantir, SoFi, Robinhood) הגיע יחד עם תחילת המהלך הגדול. בודקים שהרווח נובע מהפעילות ולא מאירוע חד-פעמי."
+    "shakeout": (
+        "דפוס תזרים לא אופייני – למשל מכירת נכסים, או גם שריפת מזומן וגם החזר חוב באותה שנה. "
+        "Dickinson מגדירה את השלב הזה כ'סל' לחברות שלא נמצאות בבירור בשלב אחר: לעתים חברה בשלה בארגון מחדש, "
+        "לעתים שנה חריגה. כדאי לבדוק מה גרם לדפוס."
     ),
-    "growth_profit": (
-        "צמיחה גבוהה יחד עם רווחיות. כאן כבר יש מכפיל רווח, ומשווים את קצב הצמיחה למכפיל. "
-        "הסיכון העיקרי: האטה בצמיחה שתוביל לכיווץ מכפיל."
+    "decline": (
+        "הפעילות השוטפת שורפת מזומן, והחברה מממנת את עצמה ממכירת נכסים והשקעות. "
+        "הערך נשען על הנכסים ועל היכולת לשרת את החוב, לא על צמיחה."
     ),
-    "maturing": (
-        "חברה רווחית שהצמיחה שלה מתמתנת – בדרך להפוך לחברת ערך. מתמחרים לפי רווח ותזרים, "
-        "ובודקים אם השוק עדיין מתמחר אותה כחברת צמיחה."
-    ),
-    "value": (
-        "חברה בשלה: רווחית, צמיחה נמוכה. מתמחרים לפי מכפילי רווח ותזרים, דיבידנד ורכישות עצמיות. "
-        "לפי הסרטון – חברות מצוינות, אבל לא מכאן מגיעות תשואות שמנצחות את המדד בפער גדול."
-    ),
-    "value_to_growth": (
-        "חברה בשלה שחזרה להאיץ צמיחה (מנוע חדש, מוצר חדש, שוק חדש). שלב ביניים מעניין: "
-        "השוק לפעמים עדיין מתמחר אותה כחברת ערך."
-    ),
-    "loss_slow": (
-        "חברה הפסדית שהצמיחה שלה איטית – מחוץ למסלול האבולוציה הבריא. אין לה את הצמיחה שתצדיק הפסדים, "
-        "וגם לא את הרווחיות של חברת ערך. כאן הקופה והחוב הם הכל."
-    ),
-    "declining": (
-        "ההכנסות מתכווצות. לא שלב באבולוציה אלא סימן אזהרה – צריך להבין אם זה זמני (מחזוריות) או מבני."
-    ),
-    "unknown": "אין מספיק רבעונים מדווחים כדי לאבחן.",
+    "unknown": "אין מספיק דוחות תזרים מזומנים רצופים כדי לאבחן.",
 }
 
 STAGE_WATCH = {
-    "startup": ["קצב שריפת מזומנים מול הקופה (כמה זמן נשאר)", "גיוסי הון ודילול", "אבני דרך: מתי ההכנסה הראשונה מהמוצר"],
-    "startup_to_growth": ["מקור ההכנסות (מוצר מול תמלוגים)", "קצב צמיחת ההכנסות רבעון מול רבעון", "הקופה מול השריפה"],
-    "growth_loss": ["צמצום ההפסד מרבעון לרבעון", "מתי הרווח הנקי צפוי", "האם הקופה מספיקה עד הרווח", "חוב שהולך וגדל מול המאזן"],
-    "inflection": ["האם הרווח חוזר על עצמו ברבעונים הבאים", "רווח מפעילות מול רווח חד-פעמי", "מכפיל הרווח הראשון מול קצב הצמיחה"],
-    "growth_profit": ["שימור קצב הצמיחה", "שיפור שולי רווח", "מכפיל מול צמיחה"],
-    "maturing": ["האם הצמיחה ממשיכה להאט", "תזרים חופשי, דיבידנד ורכישות עצמיות", "מכפיל מול חברות ערך דומות"],
-    "value": ["מכפיל רווח ותזרים", "יציבות הרווח", "תשואת דיבידנד ורכישות עצמיות"],
-    "value_to_growth": ["מה מניע את ההאצה", "האם היא בת-קיימא", "האם המכפיל עוד לא משקף אותה"],
-    "loss_slow": ["הקופה מול השריפה", "חוב ומועדי פירעון", "סימנים לשינוי כיוון (התייעלות, מוצר חדש)"],
-    "declining": ["סיבת הירידה", "שולי רווח", "מאזן וחוב"],
+    "introduction": ["כמה זמן הקופה מחזיקה בקצב השריפה", "גיוסי הון ודילול", "אבני דרך עד הכנסה ראשונה או רווח ראשון",
+                     "מגמת התזרים מפעילות – מתי יהפוך לחיובי (מעבר לשלב הצמיחה)"],
+    "growth": ["שימור קצב צמיחת ההכנסות", "שיפור שולי רווח ותזרים", "תלות בגיוסים – האם המימון יורד",
+               "מכפיל ביחס לקצב הצמיחה"],
+    "mature": ["תזרים חופשי ותשואת דיבידנד", "קנייה עצמית והחזר חוב", "האם הצמיחה נשמרת או נשחקת",
+               "מכפילי רווח ותזרים מול חברות דומות"],
+    "shakeout": ["מה גרם לדפוס החריג (מכירת נכסים, ארגון מחדש, שנה חלשה)", "האם התזרים מפעילות יציב",
+                 "חוב ומועדי פירעון"],
+    "decline": ["שריפת מזומן מול נכסים שאפשר למכור", "חוב ויכולת החזר", "סימנים לתפנית – מוצר חדש או התייעלות"],
     "unknown": [],
 }
 
@@ -157,8 +202,10 @@ def compute_metrics(quarterly: pd.DataFrame, balance: pd.DataFrame, period_month
         m["fcf_q"] = m["ocf_q"]
     m["sbc_q"] = q.get("sbc")
     m["op_income_q"] = q.get("op_income")
+    m["cfi_q"] = q.get("cfi")
+    m["cff_q"] = q.get("cff")
 
-    for col in ["revenue", "net_income", "op_income", "ocf", "fcf", "sbc"]:
+    for col in ["revenue", "net_income", "op_income", "ocf", "fcf", "sbc", "cfi", "cff"]:
         src = m.get(f"{col}_q")
         if src is None or not src.notna().any():
             m[f"{col}_ttm"] = np.nan
@@ -198,62 +245,37 @@ def compute_metrics(quarterly: pd.DataFrame, balance: pd.DataFrame, period_month
     by_total = m["cash"].fillna(0) + m["securities_total"].fillna(0)
     m["liquid"] = np.maximum(by_parts, by_total)
     m.loc[m[["cash", "st_investments", "securities_total", "lt_securities"]].isna().all(axis=1), "liquid"] = np.nan
+
+    # תזרים מהשקעות מנוטרל: קנייה ומכירה של ניירות ערך סחירים הם ניהול של הקופה, לא השקעה בעסק.
+    # מנטרלים לפי השינוי ביתרת ניירות הערך במאזן ב-12 החודשים (קנייה נטו מגדילה את היתרה ומקטינה את התזרים).
+    sec_level = np.maximum(m["st_investments"].fillna(0) + m["lt_securities"].fillna(0), m["securities_total"].fillna(0))
+    sec_level = sec_level.where(m[["st_investments", "lt_securities", "securities_total"]].notna().any(axis=1))
+    yago = pd.Series([_value_year_ago(sec_level, t) for t in m.index], index=m.index)
+    m["sec_change_12m"] = (sec_level - yago).fillna(0.0)
+    m["cfi_raw_ttm"] = m["cfi_ttm"]
+    m["cfi_ttm"] = m["cfi_ttm"] + m["sec_change_12m"]
     return m
 
 
 # ---------------------------------------------------------------------------
 # סיווג שלב
 # ---------------------------------------------------------------------------
+def _sign(x):
+    return "+" if x > 0 else "-"
+
+
+def cash_flow_pattern(row) -> tuple | None:
+    """הסימנים של (פעילות שוטפת, השקעות, מימון) ב-12 החודשים האחרונים."""
+    vals = [row.get("ocf_ttm"), row.get("cfi_ttm"), row.get("cff_ttm")]
+    if any(v is None or pd.isna(v) for v in vals):
+        return None
+    return tuple(_sign(v) for v in vals)
+
+
 def classify_at(m: pd.DataFrame, i: int, cfg: Config) -> str:
-    row = m.iloc[i]
-    rev, ni, g = row["revenue_ttm"], row["ni_core_ttm"], row["revenue_yoy"]
-
-    if pd.isna(ni):
-        return "unknown"
-    if pd.isna(rev) or rev < cfg.startup_rev:
-        return "startup"
-
-    past = m.iloc[max(0, i - cfg.lookback_cross_q):i]
-    past_rev = past["revenue_ttm"]
-    crossed_recently = len(past_rev.dropna()) > 0 and (past_rev.dropna() < cfg.startup_rev).any()
-    doubling_young = (not pd.isna(g) and g >= 1.0 and rev < cfg.early_rev)
-    if crossed_recently or doubling_young:
-        return "startup_to_growth"
-
-    # מעבר לרווח נקי: TTM חיובי לראשונה אחרי לפחות 2 רבעוני TTM שליליים
-    if ni > 0:
-        hist = m["ni_core_ttm"].iloc[:i + 1].dropna()
-        if len(hist) >= 3:
-            pos = (hist > 0).values
-            # הרבעון הראשון ברצף החיובי הנוכחי
-            k = len(pos) - 1
-            while k > 0 and pos[k - 1]:
-                k -= 1
-            run_len = len(pos) - k
-            negatives_before = (~pos[:k]).sum()
-            if run_len <= cfg.inflection_window_q and negatives_before >= 2:
-                if pd.isna(g) or g >= cfg.value_max:
-                    return "inflection"
-
-    if pd.isna(g):
-        return "unknown"
-
-    if g >= cfg.growth_min:
-        if ni < 0:
-            return "growth_loss"
-        # האצה מחדש: 4–12 רבעונים אחורה רוב הזמן צמיחה נמוכה
-        older = m["revenue_yoy"].iloc[max(0, i - 12):max(0, i - 4)].replace([np.inf], np.nan).dropna()
-        if len(older) >= 4 and (older < cfg.value_max).mean() >= 0.5:
-            return "value_to_growth"
-        return "growth_profit"
-
-    if g < -0.10:
-        return "declining" if ni < 0 else "value"
-
-    if g >= cfg.value_max:
-        return "maturing" if ni > 0 else "loss_slow"
-
-    return "value" if ni > 0 else "loss_slow"
+    """שלב לפי Dickinson (2011) – רק לפי סימני התזרים, בלי ספים."""
+    pat = cash_flow_pattern(m.iloc[i])
+    return DICKINSON.get(pat, "unknown") if pat else "unknown"
 
 
 def stage_history(m: pd.DataFrame, cfg: Config) -> pd.Series:
@@ -366,12 +388,10 @@ class Diagnosis:
     events: pd.DataFrame = field(default_factory=pd.DataFrame)
     explain: str = ""
     watch: list = field(default_factory=list)
+    damodaran: str | None = None
 
 
-BASE_RISK = {
-    "startup": 35, "startup_to_growth": 28, "growth_loss": 20, "loss_slow": 30, "declining": 35,
-    "inflection": 15, "growth_profit": 10, "maturing": 8, "value": 5, "value_to_growth": 10, "unknown": 25,
-}
+BASE_RISK = {"introduction": 35, "growth": 15, "mature": 5, "shakeout": 25, "decline": 40, "unknown": 25}
 
 
 def _risk_level(score: int) -> str:
@@ -388,7 +408,7 @@ def diagnose(data, cfg: Config | None = None) -> Diagnosis:
     cfg = cfg or Config()
     pm = getattr(data, "period_months", 3)
     if pm == 12:  # התאמת חלונות הזמן לנתונים שנתיים
-        cfg = replace(cfg, lookback_cross_q=2, inflection_window_q=1, breakeven_fit_q=4)
+        cfg = replace(cfg, inflection_window_q=1, breakeven_fit_q=4, edge_horizon_q=1)
     m = compute_metrics(data.quarterly, data.balance, pm)
     m = m[m["net_income_q"].notna() | m["revenue_q"].notna()]
     hist = stage_history(m, cfg)
@@ -453,6 +473,9 @@ def diagnose(data, cfg: Config | None = None) -> Diagnosis:
         "market_cap": mcap, "ps": ps, "pe": pe, "pfcf": pfcf, "volatility": vol,
         "last_price": data.last_price,
         "non_operating_profit": bool(last.get("non_operating_profit", False)) if len(m) else False,
+        "ocf_ttm": last.get("ocf_ttm", np.nan), "cfi_ttm": last.get("cfi_ttm", np.nan), "cff_ttm": last.get("cff_ttm", np.nan),
+        "cfi_raw_ttm": last.get("cfi_raw_ttm", np.nan), "sec_change_12m": last.get("sec_change_12m", np.nan),
+        "pattern": "".join(cash_flow_pattern(last)) if len(m) and cash_flow_pattern(last) else None,
         "op_income_ttm": last.get("op_income_ttm", np.nan),
     }
 
@@ -512,7 +535,7 @@ def diagnose(data, cfg: Config | None = None) -> Diagnosis:
     if not pd.isna(g) and np.isfinite(g):
         if g < -0.10:
             add(10, f"ההכנסות ירדו ב-{-g:.0%} בשנה")
-        elif stage in ("growth_loss", "growth_profit", "inflection") and not pd.isna(g_prev) and g_prev > 0.3 and g < g_prev * 0.5:
+        elif stage in ("growth", "introduction") and not pd.isna(g_prev) and g_prev > 0.3 and g < g_prev * 0.5:
             add(5, f"האטה חדה בצמיחה: מ-{g_prev:.0%} ל-{g:.0%}")
 
     if not pd.isna(ps):
@@ -537,7 +560,7 @@ def diagnose(data, cfg: Config | None = None) -> Diagnosis:
 
     score = int(max(3, min(100, round(score))))  # אין מניה בלי סיכון
     approaching = (
-        stage in ("growth_loss", "startup_to_growth", "loss_slow")
+        (latest.get("net_income_ttm") is not None and not pd.isna(latest.get("net_income_ttm")) and latest["net_income_ttm"] < 0)
         and be.get("months") is not None and 0 < be["months"] <= cfg.approaching_q * 3
     )
 
@@ -551,6 +574,7 @@ def diagnose(data, cfg: Config | None = None) -> Diagnosis:
         risk_score=score, risk_level=_risk_level(score),
         risk_reasons=reasons, positives=positives, events=events,
         explain=STAGE_EXPLAIN[stage], watch=STAGE_WATCH[stage],
+        damodaran=damodaran_stage(latest, cfg),
     )
 
 
@@ -633,7 +657,18 @@ def status_narrative(dg: "Diagnosis", name: str) -> list[str]:
     """תמונת מצב כללית בעברית, משפט לכל נושא."""
     L = dg.latest
     out = []
-    out.append(f"{name} נמצאת בשלב \"{dg.stage_he}\" במסלול האבולוציה של חברה.")
+    pat = L.get("pattern")
+    if dg.stage != "unknown" and pat:
+        lbl = {"+": "חיובי", "-": "שלילי"}
+        out.append(
+            f"לפי מודל Dickinson, {name} נמצאת בשלב \"{dg.stage_he}\": תזרים מפעילות {lbl[pat[0]]}, "
+            f"מהשקעות {lbl[pat[1]]} וממימון {lbl[pat[2]]} ב-12 החודשים האחרונים."
+        )
+    else:
+        out.append(f"אין מספיק נתוני תזרים מזומנים כדי לקבוע את השלב של {name}.")
+    if dg.damodaran:
+        D = DAMODARAN[dg.damodaran]
+        out.append(f"לפי מחזור החיים של Damodaran, שמבוסס על צמיחה ורווחיות, היא בשלב \"{D['he']}\" ({D['rule']}).")
 
     rev, g, ni = L.get("revenue_ttm"), L.get("revenue_yoy"), L.get("net_income_ttm")
     if rev is not None and not pd.isna(rev) and rev > 0:
@@ -657,7 +692,7 @@ def status_narrative(dg: "Diagnosis", name: str) -> list[str]:
         )
 
     be = dg.breakeven
-    if dg.stage in ("growth_loss", "startup_to_growth", "loss_slow"):
+    if (L.get("net_income_ttm") or 0) < 0:
         if be.get("trend") == "narrowing" and be.get("months"):
             out.append(f"ההפסדים מצטמצמים; לפי המגמה, רווח נקי שנתי צפוי בעוד כ-{be['months']} חודשים.")
         elif be.get("trend") == "widening":
@@ -705,66 +740,47 @@ def _trend_eta(values: list, threshold: float, max_periods: int = 8):
 
 def edge_signals(dg: "Diagnosis", cfg: Config | None = None) -> list[dict]:
     """
-    מחזיר רשימת התראות "על הסף": חברה שקרובה לגבול של שלב אחר ונעה לכיוונו.
-    כל התראה: to (קוד שלב), title, text, eta (רבעונים, אם ניתן להעריך), direction (up/down).
+    "על הסף" לפי Dickinson: אחד משלושת התזרימים (12 חודשים) קרוב לאפס ומגמת 4 התקופות האחרונות
+    צפויה להפוך את הסימן שלו – ואז הצירוף, ולכן גם השלב, משתנים.
     """
     cfg = cfg or Config()
     m = dg.metrics
-    if m is None or m.empty:
+    if m is None or m.empty or dg.stage == "unknown":
         return []
-    L = dg.latest
-    stage = dg.stage
+    names = {"ocf_ttm": "התזרים מפעילות שוטפת", "cfi_ttm": "התזרים מהשקעות", "cff_ttm": "התזרים ממימון"}
+    meaning = {
+        ("ocf_ttm", "+"): "הפעילות תתחיל לייצר מזומן",
+        ("ocf_ttm", "-"): "הפעילות תתחיל לשרוף מזומן",
+        ("cfi_ttm", "+"): "החברה תתחיל לממש השקעות ונכסים יותר משהיא משקיעה",
+        ("cfi_ttm", "-"): "החברה תחזור להשקיע",
+        ("cff_ttm", "+"): "החברה תחזור לגייס כסף",
+        ("cff_ttm", "-"): "החברה תפסיק לגייס ותתחיל להחזיר כסף למשקיעים (דיבידנד, קנייה עצמית, החזר חוב)",
+    }
+    last = m.iloc[-1]
+    pat = cash_flow_pattern(last)
+    if not pat:
+        return []
     out = []
-    g = L.get("revenue_yoy")
-    g_hist = list(m["revenue_yoy"].replace([np.inf, -np.inf], np.nan).dropna().iloc[-4:].values)
-    rev = L.get("revenue_ttm")
-    rev_hist = list(m["revenue_ttm"].dropna().iloc[-4:].values)
-
-    def add(to, title, text, eta=None, direction="up"):
-        out.append({"to": to, "to_he": STAGES[to]["he"], "title": title, "text": text, "eta": eta, "direction": direction})
-
-    # סטארטאפ שמתקרב לסף ההכנסות
-    if stage == "startup" and rev is not None and not pd.isna(rev) and rev > 0.3 * cfg.startup_rev:
-        _, eta = _trend_eta(rev_hist, cfg.startup_rev)
-        if eta or rev > 0.6 * cfg.startup_rev:
-            add("startup_to_growth", "ההכנסות מתקרבות לסף",
-                f"הכנסות של ${rev/1e6:.0f}M ב-12 חודשים, מול סף של ${cfg.startup_rev/1e6:.0f}M.", eta)
-
-    finite_g = g is not None and not pd.isna(g) and np.isfinite(g)
-
-    # הפסדית שמתקרבת לרווח
-    if dg.approaching_profit and dg.breakeven.get("months"):
-        q = max(1, round(dg.breakeven["months"] / 3))
-        add("inflection", "מתקרבת לרווח נקי",
-            "ההפסדים מצטמצמים בעקביות, ולפי המגמה הרווח הנקי השנתי יהפוך לחיובי.", q)
-
-    # רווחית עם שולי רווח דקים ורווח יורד – סכנת חזרה להפסד
-    if stage in ("inflection", "growth_profit", "maturing", "value", "value_to_growth"):
-        nm = L.get("net_margin_ttm")
-        ni_q = list(m["net_income_q"].dropna().iloc[-4:].values)
-        if nm is not None and not pd.isna(nm) and 0 < nm < 0.04 and len(ni_q) >= 3:
-            slope, _ = _trend_eta(ni_q, 0)
-            if slope is not None and slope < 0:
-                add("growth_loss" if finite_g and g >= cfg.growth_min else "loss_slow", "סכנת חזרה להפסד",
-                    f"שולי הרווח דקים ({nm:.1%}) והרווח הרבעוני יורד.", None, "down")
-
-    if finite_g and len(g_hist) >= 3:
-        slope, _ = _trend_eta(g_hist, 0)
-        # צמיחה שמאטה לכיוון סף הצמיחה
-        if stage in ("growth_profit", "growth_loss", "inflection", "value_to_growth") and g < cfg.growth_min + 0.10 and slope < 0:
-            _, eta = _trend_eta(g_hist, cfg.growth_min)
-            to = "maturing" if (L.get("net_income_ttm") or 0) > 0 else "loss_slow"
-            add(to, "הצמיחה מאטה לכיוון הסף",
-                f"צמיחה של {g:.0%} בשנה (סף חברת צמיחה: {cfg.growth_min:.0%}) – יורדת ברבעונים האחרונים.", eta, "down")
-        # בשלה שהצמיחה שלה מאטה לכיוון ערך
-        if stage == "maturing" and g < cfg.value_max + 0.05 and slope < 0:
-            _, eta = _trend_eta(g_hist, cfg.value_max)
-            add("value", "מתקרבת לשלב הערך",
-                f"צמיחה של {g:.0%} בשנה (סף חברת ערך: {cfg.value_max:.0%}) – ממשיכה לרדת.", eta, "down")
-        # האצה מחדש לכיוון צמיחה
-        if stage in ("maturing", "value", "loss_slow") and g > cfg.growth_min - 0.08 and slope > 0:
-            _, eta = _trend_eta(g_hist, cfg.growth_min)
-            to = "value_to_growth" if stage != "loss_slow" else "growth_loss"
-            add(to, "הצמיחה מאיצה",
-                f"צמיחה של {g:.0%} בשנה ועולה – מתקרבת לסף חברת צמיחה ({cfg.growth_min:.0%}).", eta, "up")
+    keys = ["ocf_ttm", "cfi_ttm", "cff_ttm"]
+    for k_i, k in enumerate(keys):
+        hist = list(m[k].dropna().iloc[-4:].values)
+        if len(hist) < 3:
+            continue
+        cur = hist[-1]
+        slope, eta = _trend_eta(hist, 0.0, max_periods=cfg.edge_horizon_q)
+        if eta is None:
+            continue
+        new_sign = "+" if cur < 0 else "-"
+        new_pat = list(pat)
+        new_pat[k_i] = new_sign
+        to = DICKINSON.get(tuple(new_pat))
+        if not to or to == dg.stage:
+            continue
+        out.append({
+            "to": to, "to_he": STAGES[to]["he"],
+            "title": f"{names[k]} מתקרב לאפס",
+            "text": f"{names[k]} ב-12 החודשים האחרונים הוא {_m(cur)}, והמגמה מצביעה על היפוך סימן – {meaning[(k, new_sign)]}. "
+                    f"לפי Dickinson, הצירוף החדש מתאים לשלב \"{STAGES[to]['he']}\".",
+            "eta": eta, "direction": "up" if STAGES[to]["order"] < STAGES[dg.stage]["order"] else "down",
+        })
     return out

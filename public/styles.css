@@ -255,3 +255,45 @@ main { overflow-x: clip; }
 .flinks a:hover { border-color: var(--ink); }
 .howto { font-size: .88rem; color: var(--muted); margin-top: 12px; }
 @media (max-width: 760px) { .src .tag { display: none; } }
+
+/* ---------- מודל: שלב + תזרימים + Damodaran ---------- */
+.kicker { color: var(--muted); font-size: .85rem; font-weight: 500; margin-bottom: 2px; }
+.cfrow { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-top: 4px; }
+.cf { position: relative; border: 1px solid var(--rule); border-radius: var(--r); padding: 10px 14px; background: #FBFCFE; }
+.cf-l { color: var(--muted); font-size: .82rem; }
+.cf-v { font-size: 1.15rem; font-weight: 600; margin-top: 2px; }
+.sign { display: inline-grid; place-items: center; width: 22px; height: 22px; border-radius: 50%; font-weight: 700; font-size: .95rem; color: #fff; }
+.cf .sign { position: absolute; top: 10px; left: 12px; }
+.sign.p { background: var(--green); } .sign.m { background: var(--red); }
+@media (max-width: 640px) { .cfrow { grid-template-columns: 1fr; } }
+.lens { margin-top: 18px; border-top: 1px solid var(--rule); padding-top: 14px; }
+.lens-h { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
+.lens-k { color: var(--muted); font-size: .85rem; }
+.lens-h b { font: 700 1.25rem var(--serif); }
+.lens-b { margin-top: 6px; font-size: .93rem; max-width: 80ch; }
+.dsteps { display: flex; flex-wrap: wrap; gap: 4px; margin: 10px 0 6px; }
+.dstep { font-size: .78rem; padding: 3px 10px; border-radius: 999px; background: var(--rule-2); color: var(--muted); }
+.dstep.on { background: var(--ink); color: #fff; font-weight: 600; }
+table.mtab td, table.mtab th { text-align: center !important; }
+table.mtab tr.hl td { background: #EEF4FF; }
+table.mtab .sign { width: 20px; height: 20px; font-size: .85rem; }
+
+/* ---------- גרף המניה ---------- */
+.px-head { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 10px 24px; margin-bottom: 12px; }
+.px-ret { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
+.px-ret b { font-size: 1.6rem; font-weight: 700; }
+.px-meas { font-size: .9rem; display: flex; align-items: center; gap: 10px; max-width: 520px; }
+.linkbtn { border: 0; background: none; color: var(--link); cursor: pointer; font: 600 .85rem var(--sans); padding: 0; }
+#pxChart { cursor: crosshair; height: 440px; }
+
+/* ---------- כרטיסי דוחות ---------- */
+.fgrid { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; margin-top: 22px; }
+.fcard { background: var(--surface); border: 1px solid var(--rule); border-radius: var(--r); padding: 18px 20px 10px; min-width: 0; }
+.fcard.wide { grid-column: 1 / -1; }
+.fhead { display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; margin-bottom: 6px; }
+.fhead h3 { font: 700 1.1rem var(--serif); margin: 0; }
+.fsub { color: var(--muted); font-size: .8rem; margin-top: 2px; }
+.kpi { text-align: left; white-space: nowrap; }
+.kpi b { display: block; font-size: 1.25rem; font-weight: 700; }
+.kpi span { font-size: .82rem; }
+@media (max-width: 900px) { .fgrid { grid-template-columns: 1fr; } .fcard.wide { grid-column: auto; } }

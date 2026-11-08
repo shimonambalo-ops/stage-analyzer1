@@ -7,9 +7,8 @@
     grid: '#EEF2F6', font: "'IBM Plex Sans Hebrew', 'Segoe UI', sans-serif",
   };
   const EXAMPLES = ['ASTS', 'QS', 'TE', 'LMND', 'PLTR', 'SOFI', 'HOOD', 'KO'];
-  const STATIONS = ['סטארטאפ', 'צמיחה הפסדית', 'מעבר לרווח', 'צמיחה רווחית', 'ערך'];
-  const POS = { startup: 0, startup_to_growth: 0.5, growth_loss: 1, inflection: 2, growth_profit: 3, maturing: 3.5,
-    value: 4, value_to_growth: 3.5, loss_slow: 1, declining: 4, unknown: 0 };
+  const STATIONS = ['היכרות', 'צמיחה', 'בשלות', 'התנערות', 'דעיכה'];
+  const POS = { introduction: 0, growth: 1, mature: 2, shakeout: 3, decline: 4, unknown: 0 };
   const REC_HE = { strong_buy: 'קנייה חזקה', buy: 'קנייה', hold: 'החזק', underperform: 'תשואת חסר', sell: 'מכירה', strong_sell: 'מכירה חזקה', none: '—' };
 
   const EXPLAIN = {
@@ -39,7 +38,12 @@
     insider: 'אחוז מהמניות שמוחזקות בידי מנהלים, מייסדים ובעלי עניין.',
     risk: 'ציון 0–100 שמשלב את השלב של החברה, הקופה, החוב, הדילול, מגמת ההפסדים, התמחור והתנודתיות. הפירוט ב"סימני אזהרה" ו"נקודות חוזק".',
     scores: 'ציונים שלנו בסולם 1–10, לפי הנתונים מהדוחות. צמיחה – קצב גידול ההכנסות; רווחיות – שולי רווח ותזרים; חוסן – קופה, חוב ודילול; תמחור – מכפילים (גבוה = זול).',
-    edge: 'החברה קרובה לגבול של שלב אחר ונעה לכיוונו, לפי המגמה ב-4 הרבעונים האחרונים.',
+    edge: 'אחד משלושת התזרימים קרוב לאפס, והמגמה ב-4 הרבעונים האחרונים צפויה להפוך את הסימן שלו – ואז, לפי Dickinson, משתנה גם השלב.',
+    dickinson: 'מודל אקדמי (Dickinson, The Accounting Review, 2011): השלב נקבע לפי הסימן של שלושת חלקי דוח תזרים המזומנים ב-12 החודשים האחרונים – פעילות שוטפת, השקעות ומימון. 8 צירופים → 5 שלבים. ההסבר המלא בלשונית "אמינות הנתונים".',
+    damodaran: 'מחזור החיים של Aswath Damodaran (NYU): שישה שלבים לפי צמיחת ההכנסות והרווחיות, וכל שלב מתמחרים אחרת. Damodaran מתאר את השלבים במילים – הספים המספריים הם התרגום שלנו.',
+    cfo: 'המזומן שהפעילות העסקית מייצרת (חיובי) או שורפת (שלילי) – לפני השקעות ומימון.',
+    cfi: 'השקעות ברכוש קבוע, רכישות וכדומה (בדרך כלל שלילי). חיובי = החברה מוכרת נכסים. מנוטרל מקנייה ומכירה של ניירות ערך סחירים.',
+    cff: 'כסף שהחברה גייסה (חיובי – הנפקות, הלוואות) או החזירה למשקיעים (שלילי – דיבידנד, קנייה עצמית, החזר חוב).',
   };
   const tipBtn = (key) => (EXPLAIN[key] ? `<button type="button" class="i" data-tip="${key}" aria-label="הסבר">?</button>` : '');
   function verdict(kind, v) {
@@ -111,7 +115,7 @@
   // ---------------- מסלול ----------------
   function trackHTML(stage, color, edges = []) {
     const pos = POS[stage] ?? 0;
-    const off = stage === 'loss_slow' || stage === 'declining';
+    const off = stage === 'unknown';
     let st = '';
     STATIONS.forEach((nm, i) => {
       const c = (i <= pos ? 'past ' : '') + (i === 0 || i === STATIONS.length - 1 ? 'end' : '');
@@ -318,13 +322,42 @@
   // ---------------- סקירה ----------------
   function renderOverview(A) {
     const L = A.latest, color = A.stage_color;
-    const off = A.stage === 'loss_slow' || A.stage === 'declining';
     const edges = (A.edges || []).map((e) => {
       const col = A.stages[e.to] ? A.stages[e.to].color : color;
-      const eta = e.eta ? `לפי המגמה: בעוד כ-${n(e.eta)} ${A.period_months === 12 ? 'שנים' : 'רבעונים'}` : 'קרובה לסף – אין עדיין הערכת זמן';
-      return `<div class="edgebox" style="border-inline-start-color:${col}"><b>על הסף: ${esc(e.title)} ← ${esc(e.to_he)}${tipBtn('edge')}</b>
-        <div>${esc(e.text)}</div><div class="eta">${eta}</div></div>`;
+      const eta = e.eta ? `לפי המגמה: בעוד כ-${n(e.eta)} ${A.period_months === 12 ? 'שנים' : 'רבעונים'}` : '';
+      return `<div class="edgebox" style="border-inline-start-color:${col}"><b>על הסף: ${esc(e.title)} ← שלב ${esc(e.to_he)}${tipBtn('edge')}</b>
+        <div>${esc(e.text)}</div>${eta ? `<div class="eta">${eta}</div>` : ''}</div>`;
     }).join('');
+
+    // רכיבי Dickinson
+    const cf = [
+      ['תזרים מפעילות שוטפת', L.ocf_ttm, 'cfo'],
+      ['תזרים מהשקעות', L.cfi_ttm, 'cfi'],
+      ['תזרים ממימון', L.cff_ttm, 'cff'],
+    ].map(([lbl, v, k]) => {
+      const sg = bad(v) ? '' : v > 0 ? '+' : '−';
+      return `<div class="cf"><div class="cf-l">${lbl}${tipBtn(k)}</div><div class="cf-v">${money(v, A.currency)}</div>
+        <span class="sign ${bad(v) ? '' : v > 0 ? 'p' : 'm'}">${sg}</span></div>`;
+    }).join('');
+    const adj = !bad(L.sec_change_12m) && Math.abs(L.sec_change_12m) > 0 && !bad(L.cfi_raw_ttm)
+      ? `<div class="note">תזרים ההשקעות מנוטרל מקנייה ומכירה של ניירות ערך סחירים (ניהול הקופה). לפני הנטרול: ${plain(money(L.cfi_raw_ttm, A.currency))}.</div>` : '';
+
+    // Damodaran
+    const D = A.damodaran;
+    const dSteps = (A.damodaran_stages || []).map((x) => `<span class="dstep ${D && D.code === x.code ? 'on' : ''}">${esc(x.he)}</span>`).join('');
+    const damo = D ? `<div class="lens">
+        <div class="lens-h"><span class="lens-k">לפי Damodaran (2024)${tipBtn('damodaran')}</span><b>${esc(D.he)}</b></div>
+        <div class="dsteps">${dSteps}</div>
+        <div class="lens-b"><span class="muted">למה:</span> ${esc(D.rule)}.</div>
+        <div class="lens-b"><span class="muted">איך מתמחרים בשלב הזה:</span> ${esc(D.value)}</div>
+      </div>` : '';
+
+    // שכבת הסרטון: מעבר לרווח נקי
+    const lastEv = (A.events || []).slice(-1)[0];
+    const recentEv = lastEv && (Date.now() - new Date(lastEv.event_date)) / 86400000 < 400;
+    const dvir = A.approaching_profit
+      ? `<span class="tag" style="color:${C.green}">מתקרבת לרווח נקי</span>`
+      : recentEv ? `<span class="tag" style="color:${C.green}">עברה לרווח נקי לאחרונה</span>` : '';
 
     const sc = A.scores || {};
     const scoreRows = [['growth', 'צמיחה'], ['profitability', 'רווחיות'], ['strength', 'חוסן פיננסי'], ['valuation', 'תמחור']].map(([k, lbl]) => {
@@ -339,34 +372,35 @@
     const rcol = risk.score < 25 ? C.green : risk.score < 50 ? C.amber : C.red;
     const neg = risk.reasons.slice(1).map((r) => `<li><span class="ic" style="background:${C.red}">!</span><span>${esc(r.text)}</span><span class="p num" style="color:${C.red}">+${r.pts}</span></li>`).join('');
     const posi = risk.positives.map((r) => `<li><span class="ic" style="background:${C.green}">✓</span><span>${esc(r.text)}</span><span class="p num" style="color:${C.green}">${r.pts}</span></li>`).join('');
-
     const name = A.name;
-    const story = (A.narrative || []).map((s) => `<p>${esc(s).replace(esc(name), `<bdi>${esc(name)}</bdi>`)}</p>`).join('');
+    const story = (A.narrative || []).map((x) => `<p>${esc(x).replace(esc(name), `<bdi>${esc(name)}</bdi>`)}</p>`).join('');
 
     let runway = '';
-    if (['startup', 'startup_to_growth', 'growth_loss', 'loss_slow', 'declining'].includes(A.stage)) {
+    if (!bad(L.net_income_ttm) && L.net_income_ttm < 0 || (!bad(L.fcf_ttm) && L.fcf_ttm < 0)) {
       const rf = A.runway.months_fcf, rn = A.runway.months_ni, be = A.breakeven;
       let beLine = '';
       if (be.trend === 'narrowing' && be.months) beLine = `<li>רווח נקי צפוי לפי המגמה: בעוד כ-<b>${n(be.months)} חודשים</b> – ${bad(rf) || be.months <= rf ? 'הקופה מספיקה עד אז' : 'הקופה לא מספיקה עד אז, צפוי גיוס'}</li>`;
       else if (be.trend === 'widening') beLine = '<li>ההפסדים מתרחבים – אין מגמה לרווח.</li>';
-      else if (be.trend === 'flat') beLine = '<li>ההפסדים יציבים – אין מגמה ברורה לרווח.</li>';
       runway = `<h3 class="h3" style="margin-top:22px">כמה זמן הקופה מחזיקה</h3><ul class="watch">
-        <li>לפי תזרים חופשי (מדויק יותר): <b>${A.runway.self_funded ? 'לא שורפת מזומן' : months(rf)}</b>${A.runway.self_funded ? '' : verdict('runway', rf)}</li>
-        <li>לפי הפסד נקי (השיטה מהסרטון): <b>${months(rn)}</b></li>${beLine}</ul>`;
+        <li>לפי תזרים חופשי: <b>${A.runway.self_funded ? 'לא שורפת מזומן' : months(rf)}</b>${A.runway.self_funded ? '' : verdict('runway', rf)}</li>
+        ${bad(rn) ? '' : `<li>לפי הפסד נקי (השיטה מהסרטון): <b>${months(rn)}</b></li>`}${beLine}</ul>`;
     }
 
     const asof = A.asof ? `<div class="asof">
         <span>הנתונים מבוססים על ${esc(A.asof.form_he)} (${n(esc(A.asof.form))}) לתקופה שהסתיימה ב-${dmy(A.asof.period_end)}, שהוגש ל-SEC ב-${dmy(A.asof.filed)}.
         ${A.asof.url ? `<a href="${esc(A.asof.url)}" target="_blank" rel="noopener">לדוח המקורי</a>` : ''}</span>
         <a href="#s-verify" class="vbadge" id="vbadge"></a></div>` : '';
+
     $('#s-overview').innerHTML = `${asof}
       <div class="card trackcard">
-        <div class="track-head"><h2 style="color:${color}">${esc(A.stage_he)}</h2>
-          ${A.approaching_profit ? `<span class="tag" style="color:${C.green}">מתקרבת לרווח נקי</span>` : ''}</div>
+        <div class="track-head">
+          <div><div class="kicker">שלב במחזור החיים לפי Dickinson (2011)${tipBtn('dickinson')}</div>
+          <h2 style="color:${color}">${esc(A.stage_he)}</h2></div>${dvir}</div>
         ${trackHTML(A.stage, color, A.edges)}
-        ${off ? `<div class="offtrack">מחוץ למסלול הבריא – ${A.stage === 'loss_slow' ? 'הפסדית בלי צמיחה מספקת' : 'ההכנסות מתכווצות'}</div>` : ''}
-        <p class="lead" style="margin:6px 0 0">${esc(A.explain)}</p>
+        <div class="cfrow">${cf}</div>${adj}
+        <p class="lead" style="margin:12px 0 0">${esc(A.explain)}</p>
         ${edges ? `<div class="edges">${edges}</div>` : ''}
+        ${damo}
       </div>
       <div class="grid2" style="margin-top:28px">
         <div>
@@ -392,75 +426,152 @@
   }
 
   // ---------------- גרפים ----------------
+  const PAL = { ink: '#14213D', slate: '#9AA9BF', blue: '#2563EB', green: '#1A936F', red: '#C8102E', orange: '#C2410C', violet: '#7C3AED', grid: '#EDF1F6', axis: '#5B6B82' };
   function baseChart(el) {
     const c = echarts.init(el, null, { renderer: 'canvas' });
     charts.push(c);
     return c;
   }
-  const axisMoney = { formatter: (v) => moneyPlain(v), color: C.muted, fontFamily: C.font };
-  const tip = { trigger: 'axis', textStyle: { fontFamily: C.font }, confine: true };
+  const qLabel = (iso) => { const d = new Date(iso); return `Q${Math.floor(d.getMonth() / 3) + 1} '${String(d.getFullYear()).slice(2)}`; };
+  const qLong = (iso) => { const d = new Date(iso); return `רבעון ${Math.floor(d.getMonth() / 3) + 1}, ${d.getFullYear()}`; };
+  const dLabel = (t) => { const d = new Date(t); return `${String(d.getDate()).padStart(2, '0')}.${String(d.getMonth() + 1).padStart(2, '0')}.${d.getFullYear()}`; };
+  const pctTxt = (x, d = 1) => (bad(x) ? '—' : `${x > 0 ? '+' : ''}${(x * 100).toFixed(d)}%`);
+  const AX = {
+    axisLine: { lineStyle: { color: PAL.grid } }, axisTick: { show: false },
+    axisLabel: { color: PAL.axis, fontFamily: C.font, fontSize: 11 },
+    splitLine: { lineStyle: { color: PAL.grid, type: 'dashed' } },
+  };
+  const LEG = { bottom: 0, right: 0, icon: 'roundRect', itemWidth: 12, itemHeight: 8, itemGap: 16,
+    textStyle: { color: PAL.axis, fontFamily: C.font, fontSize: 12 } };
+  const TIP = { trigger: 'axis', confine: true, backgroundColor: '#fff', borderColor: PAL.grid, borderWidth: 1, padding: [8, 12],
+    textStyle: { color: PAL.ink, fontFamily: C.font, fontSize: 12 }, extraCssText: 'box-shadow:0 6px 20px rgba(20,33,61,.12);direction:rtl;text-align:right' };
+  function tipRows(title, rows) {
+    return `<div style="font-weight:600;margin-bottom:4px">${title}</div>` + rows.map(([col, lbl, val]) =>
+      `<div style="display:flex;justify-content:space-between;gap:16px"><span><i style="display:inline-block;width:8px;height:8px;border-radius:2px;background:${col};margin-inline-end:6px"></i>${lbl}</span><b style="direction:ltr">${val}</b></div>`).join('');
+  }
 
+  // ----- גרף המניה: טווחים, תשואה בטווח, מצב אחוזים ומדידה בין שתי נקודות -----
   function renderChart(A) {
-    const perf = A.perf || {};
-    const perfHTML = ['1M', '6M', 'YTD', '1Y', '5Y'].filter((k) => !bad(perf[k])).map((k) => {
-      const lbl = { '1M': 'חודש', '6M': 'חצי שנה', 'YTD': 'מתחילת השנה', '1Y': 'שנה', '5Y': '5 שנים' }[k];
-      return `<div>${lbl}<b class="${cls(perf[k])}">${pct(perf[k])}</b></div>`;
-    }).join('');
+    const prices = (A.prices || []).map(([d, v]) => [new Date(d).getTime(), v]);
+    const hasPx = prices.length > 1;
     const seen = [];
-    (A.series.stage || []).forEach((s) => { if (s !== 'unknown' && !seen.includes(s)) seen.push(s); });
-    const legend = seen.map((s) => `<span><i style="background:${A.stages[s].color};opacity:.55"></i>${esc(A.stages[s].he)}</span>`).join('')
-      + (A.events.length ? `<span><i style="background:${C.green}"></i>מעבר לרווח נקי (פרסום הדוח)</span>` : '');
-
-    $('#s-chart').innerHTML = `<h2>המניה לאורך המסלול</h2>
+    (A.series.stage || []).forEach((x) => { if (x !== 'unknown' && !seen.includes(x)) seen.push(x); });
+    const legend = seen.map((x) => `<span><i style="background:${A.stages[x].color};opacity:.45"></i>${esc(A.stages[x].he)}</span>`).join('')
+      + (A.events.length ? `<span><i style="background:${C.green}"></i>מעבר לרווח נקי</span>` : '');
+    const RANGES = [['1M', 'חודש', 30], ['3M', '3 חודשים', 91], ['6M', 'חצי שנה', 182], ['YTD', 'מתחילת השנה', null], ['1Y', 'שנה', 365], ['3Y', '3 שנים', 1095], ['5Y', '5 שנים', 1826], ['MAX', 'הכל', 0]];
+    $('#s-chart').innerHTML = `<h2>מחיר המניה</h2>
       <div class="card">
-        ${perfHTML ? `<div class="perf">${perfHTML}</div>` : ''}
-        <div class="chart-tools">
-          <div class="seg" id="rng">${['1Y', '3Y', '5Y', 'MAX'].map((r) => `<button data-r="${r}" class="${r === 'MAX' ? 'on' : ''}">${r === 'MAX' ? 'הכל' : r}</button>`).join('')}</div>
-          <div class="seg" id="scl"><button data-s="log" class="on">לוגריתמי</button><button data-s="value">ליניארי</button></div>
+        ${hasPx ? `<div class="px-head">
+          <div class="px-ret"><span class="muted">תשואה בטווח המוצג</span><b id="rangeRet" class="num">—</b><span class="muted num" id="rangeDates"></span></div>
+          <div class="px-meas" id="measure"><span class="muted">לחיצה על הגרף קובעת נקודת ייחוס – ואז רואים את השינוי באחוזים מכל נקודה אחרת.</span></div>
         </div>
-        <div class="chart" id="pxChart"></div>
+        <div class="chart-tools">
+          <div class="seg" id="rng">${RANGES.map(([k, lbl]) => `<button data-r="${k}" title="${lbl}" class="${k === 'MAX' ? 'on' : ''}">${k === 'MAX' ? 'הכל' : k}</button>`).join('')}</div>
+          <div style="display:flex;gap:8px;flex-wrap:wrap">
+            <div class="seg" id="mode"><button data-m="price" class="on">מחיר</button><button data-m="pct">אחוזים</button></div>
+            <div class="seg" id="scl"><button data-s="value" class="on">ליניארי</button><button data-s="log">לוגריתמי</button></div>
+          </div>
+        </div>` : '<p class="muted">מחירי מניה לא זמינים כרגע.</p>'}
+        <div class="chart" id="pxChart" ${hasPx ? '' : 'hidden'}></div>
         <div class="legend">${legend}</div>
-        <div class="note">הרקע צבוע לפי השלב שאובחן בכל רבעון, לפי הדוחות שפורסמו עד אז.</div>
+        <div class="note">הרקע צבוע לפי השלב במחזור החיים (Dickinson) שאובחן בכל רבעון, לפי הדוחות שפורסמו עד אז.</div>
       </div>`;
+    if (!hasPx) return;
 
     const dates = A.series.dates, stages = A.series.stage;
     const areas = [];
     for (let i = 0; i < dates.length; i++) {
       if (stages[i] === 'unknown') continue;
       const end = i + 1 < dates.length ? dates[i + 1] : addDays(dates[i], 91);
-      areas.push([{ xAxis: dates[i], itemStyle: { color: A.stages[stages[i]].color, opacity: 0.14 } }, { xAxis: end }]);
+      areas.push([{ xAxis: new Date(dates[i]).getTime(), itemStyle: { color: A.stages[stages[i]].color, opacity: 0.09 } }, { xAxis: new Date(end).getTime() }]);
     }
-    const hasPx = A.prices && A.prices.length;
-    const data = hasPx ? A.prices : dates.map((d, i) => [d, A.series.revenue_ttm[i]]);
+    const st = { i0: 0, i1: prices.length - 1, mode: 'price', anchor: null, scale: 'value' };
+    const idxAt = (t) => { let lo = 0, hi = prices.length - 1; while (lo < hi) { const mid = (lo + hi) >> 1; if (prices[mid][0] < t) lo = mid + 1; else hi = mid; } return lo; };
+    const base = () => prices[st.i0][1];
+    const shown = () => (st.mode === 'pct' ? prices.map(([t, v]) => [t, (v / base() - 1) * 100]) : prices);
     const c = baseChart($('#pxChart'));
-    const opt = {
-      textStyle: { fontFamily: C.font },
-      grid: { left: 56, right: 16, top: 16, bottom: 56 },
-      tooltip: { ...tip, valueFormatter: (v) => (hasPx ? '$' + (+v).toFixed(2) : moneyPlain(v)) },
-      xAxis: { type: 'time', axisLine: { lineStyle: { color: C.rule } }, axisLabel: { color: C.muted } },
-      yAxis: { type: hasPx ? 'log' : 'value', scale: true, splitLine: { lineStyle: { color: C.grid } },
-        axisLabel: { color: C.muted, formatter: hasPx ? (v) => '$' + (+v).toLocaleString('en-US', { maximumFractionDigits: v < 10 ? 2 : 0 }) : axisMoney.formatter } },
-      dataZoom: [{ type: 'inside' }, { type: 'slider', height: 18, bottom: 8, borderColor: C.rule, textStyle: { color: C.muted } }],
-      series: [{
-        type: 'line', name: hasPx ? 'מחיר' : 'הכנסות 12 חודשים', data, showSymbol: false, lineStyle: { color: C.ink, width: 1.6 }, itemStyle: { color: C.ink },
-        markArea: { silent: true, data: areas },
-        markLine: { symbol: 'none', silent: true, label: { show: false }, lineStyle: { color: C.green, type: 'dashed', width: 1.5 },
-          data: (A.events || []).map((e) => ({ xAxis: e.event_date })) },
-      }],
+    const anchorMark = () => (st.anchor === null ? [] : [{ xAxis: prices[st.anchor][0], lineStyle: { color: PAL.ink, type: 'solid', width: 1.2 },
+      label: { show: true, formatter: 'נקודת ייחוס', color: PAL.ink, fontFamily: C.font, position: 'insideEndTop' } }]);
+    const marks = () => ({ symbol: 'none', silent: true, label: { show: false }, lineStyle: { color: C.green, type: 'dashed', width: 1.4 },
+      data: (A.events || []).map((e) => ({ xAxis: new Date(e.event_date).getTime() })).concat(anchorMark()) });
+
+    c.setOption({
+      textStyle: { fontFamily: C.font }, animation: false,
+      grid: { left: 64, right: 18, top: 18, bottom: 60 },
+      xAxis: { type: 'time', ...AX, splitLine: { show: false } },
+      yAxis: { type: 'value', scale: true, ...AX, axisLabel: { ...AX.axisLabel, formatter: (v) => '$' + (+v).toLocaleString('en-US', { maximumFractionDigits: v < 10 ? 2 : 0 }) } },
+      dataZoom: [{ type: 'inside', filterMode: 'weakFilter' }, { type: 'slider', filterMode: 'weakFilter', height: 22, bottom: 10, borderColor: PAL.grid, fillerColor: 'rgba(20,33,61,.06)',
+        handleStyle: { color: '#fff', borderColor: PAL.slate }, dataBackground: { lineStyle: { color: PAL.slate }, areaStyle: { color: PAL.grid } }, labelFormatter: (v) => dLabel(v), textStyle: { color: PAL.axis } }],
+      tooltip: { ...TIP, axisPointer: { type: 'cross', lineStyle: { color: PAL.slate }, label: { show: false } },
+        formatter: (ps) => {
+          const i = idxAt(ps[0].value[0]); const [t, v] = prices[i];
+          const rows = [[PAL.ink, 'מחיר', '$' + v.toFixed(2)], [PAL.slate, 'מתחילת הטווח', pctTxt(v / base() - 1)]];
+          if (st.anchor !== null) rows.push([PAL.blue, `מנקודת הייחוס (${dLabel(prices[st.anchor][0])})`, pctTxt(v / prices[st.anchor][1] - 1)]);
+          return tipRows(dLabel(t), rows);
+        } },
+      series: [{ type: 'line', data: shown(), showSymbol: false, lineStyle: { color: PAL.ink, width: 1.6 }, itemStyle: { color: PAL.ink },
+        markArea: { silent: true, data: areas }, markLine: marks() }],
+    });
+
+    const update = () => {
+      const r = prices[st.i1][1] / base() - 1;
+      $('#rangeRet').textContent = pctTxt(r);
+      $('#rangeRet').className = 'num ' + cls(r);
+      $('#rangeDates').textContent = `${dLabel(prices[st.i0][0])} – ${dLabel(prices[st.i1][0])}`;
+      if (st.anchor !== null) {
+        const a = prices[st.anchor], z = prices[st.i1];
+        const ch = z[1] / a[1] - 1;
+        $('#measure').innerHTML = `<span>מנקודת הייחוס ${dLabel(a[0])} ($${a[1].toFixed(2)}) עד ${dLabel(z[0])}: <b class="num ${cls(ch)}">${pctTxt(ch)}</b></span>
+          <button type="button" class="linkbtn" id="clearAnchor">ביטול</button>`;
+        $('#clearAnchor').onclick = () => { st.anchor = null; redraw(); };
+      } else {
+        $('#measure').innerHTML = '<span class="muted">לחיצה על הגרף קובעת נקודת ייחוס – ואז רואים את השינוי באחוזים מכל נקודה אחרת.</span>';
+      }
     };
-    c.setOption(opt);
+    const redraw = () => {
+      const pctMode = st.mode === 'pct';
+      c.setOption({
+        yAxis: { type: pctMode ? 'value' : st.scale, axisLabel: { formatter: pctMode ? (v) => `${v > 0 ? '+' : ''}${(+v).toFixed(0)}%` : (v) => '$' + (+v).toLocaleString('en-US', { maximumFractionDigits: v < 10 ? 2 : 0 }) } },
+        series: [{ data: shown(), markLine: marks() }],
+      });
+      update();
+    };
+    c.on('datazoom', () => {
+      const dz = c.getOption().dataZoom[0];
+      const t0 = dz.startValue ?? prices[0][0], t1 = dz.endValue ?? prices[prices.length - 1][0];
+      st.i0 = idxAt(t0); st.i1 = Math.max(st.i0, Math.min(prices.length - 1, idxAt(t1)));
+      if (st.mode === 'pct') redraw(); else update();
+    });
+    c.getZr().on('click', (e) => {
+      if (!c.containPixel({ gridIndex: 0 }, [e.offsetX, e.offsetY])) return;
+      const t = c.convertFromPixel({ gridIndex: 0 }, [e.offsetX, e.offsetY])[0];
+      const i = idxAt(t);
+      st.anchor = st.anchor === i ? null : i;
+      redraw();
+    });
     $('#rng').addEventListener('click', (e) => {
       const b = e.target.closest('button'); if (!b) return;
       [...$('#rng').children].forEach((x) => x.classList.toggle('on', x === b));
-      const last = data.length ? data[data.length - 1][0] : null;
-      const yrs = { '1Y': 1, '3Y': 3, '5Y': 5 }[b.dataset.r];
-      c.dispatchAction(yrs && last ? { type: 'dataZoom', startValue: addDays(last, -365 * yrs), endValue: last } : { type: 'dataZoom', start: 0, end: 100 });
+      const last = prices[prices.length - 1][0];
+      const R = RANGES.find((x) => x[0] === b.dataset.r);
+      let start = prices[0][0];
+      if (R[0] === 'YTD') start = new Date(new Date(last).getFullYear(), 0, 1).getTime();
+      else if (R[2]) start = last - R[2] * 86400000;
+      c.dispatchAction({ type: 'dataZoom', startValue: Math.max(start, prices[0][0]), endValue: last });
+    });
+    $('#mode').addEventListener('click', (e) => {
+      const b = e.target.closest('button'); if (!b) return;
+      [...$('#mode').children].forEach((x) => x.classList.toggle('on', x === b));
+      st.mode = b.dataset.m;
+      $('#scl').style.visibility = st.mode === 'pct' ? 'hidden' : 'visible';
+      redraw();
     });
     $('#scl').addEventListener('click', (e) => {
-      const b = e.target.closest('button'); if (!b || !hasPx) return;
+      const b = e.target.closest('button'); if (!b) return;
       [...$('#scl').children].forEach((x) => x.classList.toggle('on', x === b));
-      c.setOption({ yAxis: { type: b.dataset.s } });
+      st.scale = b.dataset.s; redraw();
     });
+    update();
   }
   function addDays(iso, d) { const t = new Date(iso); t.setDate(t.getDate() + d); return t.toISOString().slice(0, 10); }
 
@@ -563,43 +674,102 @@
       ${row('מניות', (r) => big(r.shares))}
     </tbody></table></div>` : '<p class="muted">אין מספיק נתונים לטבלה.</p>';
 
+    const L = A.latest, s = A.series, d = s.dates;
+    const last = (arr) => { for (let i = arr.length - 1; i >= 0; i--) if (!bad(arr[i])) return arr[i]; return null; };
+    const kpi = (val, sub, subCls = '') => `<div class="kpi"><b>${val}</b>${sub ? `<span class="${subCls}">${sub}</span>` : ''}</div>`;
+    const netCash = !bad(L.liquid) ? L.liquid - (L.debt || 0) : null;
+    const sh = A.series.shares;
     const per = A.period_months === 12 ? 'שנתי' : 'רבעוני';
+
     $('#s-fin').innerHTML = `<h2>דוחות כספיים</h2>${table}
-      <div class="grid2 even" style="margin-top:22px">
-        <div class="card"><h3 class="h3">הכנסות</h3><div class="chart sm" id="cRev"></div></div>
-        <div class="card"><h3 class="h3">רווח נקי ותזרים חופשי</h3><div class="chart sm" id="cNi"></div></div>
-        <div class="card"><h3 class="h3">מזומן מול חוב</h3>${debtNote(A)}<div class="chart sm" id="cCash"></div></div>
-        <div class="card"><h3 class="h3">מספר מניות (דילול)</h3><div class="chart sm" id="cSh"></div></div>
+      <div class="fgrid">
+        <div class="fcard wide"><div class="fhead"><div><h3>תזרימי המזומנים – הבסיס למודל Dickinson</h3>
+            <div class="fsub">12 חודשים מתגלגלים. הצירוף של שלושת הסימנים קובע את השלב (הפס העליון).</div></div>
+            ${kpi(`${esc(A.stage_he)} <span class="num" style="font-weight:500">(${(L.pattern || '').split('').join(' ')})</span>`, '')}</div>
+          <div class="chart" id="cCF" style="height:340px"></div></div>
+        <div class="fcard"><div class="fhead"><div><h3>הכנסות</h3><div class="fsub">${per}, וצמיחה שנתית ב-%</div></div>
+            ${kpi(money(L.revenue_ttm, A.currency), bad(L.revenue_yoy) ? '' : `${pct(L.revenue_yoy)} בשנה`, cls(L.revenue_yoy))}</div>
+          <div class="chart sm" id="cRev"></div></div>
+        <div class="fcard"><div class="fhead"><div><h3>רווחיות</h3><div class="fsub">12 חודשים מתגלגלים</div></div>
+            ${kpi(money(L.net_income_ttm, A.currency), bad(L.net_margin_ttm) ? '' : `שולי רווח ${pct(L.net_margin_ttm, false)}`, cls(L.net_income_ttm))}</div>
+          <div class="chart sm" id="cNi"></div></div>
+        <div class="fcard"><div class="fhead"><div><h3>מזומן מול חוב</h3><div class="fsub">לסוף כל רבעון</div></div>
+            ${kpi(money(netCash, A.currency), bad(netCash) ? '' : (netCash >= 0 ? 'מזומן נטו' : 'חוב נטו'), cls(netCash))}</div>
+          ${debtNote(A)}<div class="chart sm" id="cCash"></div></div>
+        <div class="fcard"><div class="fhead"><div><h3>מספר מניות</h3><div class="fsub">גידול = דילול</div></div>
+            ${kpi(big(last(sh)), bad(L.dilution_yoy) ? '' : `${pct(L.dilution_yoy)} בשנה`, bad(L.dilution_yoy) ? '' : L.dilution_yoy > 0.01 ? 'neg' : L.dilution_yoy < -0.01 ? 'pos' : '')}</div>
+          <div class="chart sm" id="cSh"></div></div>
       </div>`;
 
-    const d = A.series.dates, s = A.series;
-    const common = (extra) => ({
-      textStyle: { fontFamily: C.font }, grid: { left: 58, right: 12, top: 30, bottom: 28 },
-      tooltip: { ...tip, valueFormatter: (v) => moneyPlain(v) },
-      legend: { top: 0, right: 0, textStyle: { color: C.muted, fontFamily: C.font }, itemWidth: 14, itemHeight: 8 },
-      xAxis: { type: 'category', data: d.map((x) => x.slice(0, 7)), axisLabel: { color: C.muted }, axisLine: { lineStyle: { color: C.rule } } },
-      yAxis: { type: 'value', axisLabel: axisMoney, splitLine: { lineStyle: { color: C.grid } } },
-      ...extra,
+    const X = { type: 'category', data: d.map(qLabel), ...AX, splitLine: { show: false }, axisLabel: { ...AX.axisLabel, hideOverlap: true } };
+    const Ymoney = { type: 'value', ...AX, axisLabel: { ...AX.axisLabel, formatter: (v) => moneyPlain(v) } };
+    const G = { left: 60, right: 16, top: 16, bottom: 44 };
+    const fmtTip = (ps, fmt) => tipRows(qLong(d[ps[0].dataIndex]), ps.filter((p) => p.value !== null && p.value !== undefined && p.seriesName)
+      .map((p) => [p.color && p.color.colorStops ? PAL.ink : (typeof p.color === 'string' ? p.color : PAL.ink), p.seriesName, fmt(p.value, p.seriesName)]));
+
+    // 1) תזרימים + פס שלבים
+    const cf = baseChart($('#cCF'));
+    cf.setOption({
+      textStyle: { fontFamily: C.font }, animation: false,
+      grid: [{ left: 60, right: 16, top: 8, height: 14 }, { left: 60, right: 16, top: 34, bottom: 44 }],
+      xAxis: [{ ...X, gridIndex: 0, show: false }, { ...X, gridIndex: 1 }],
+      yAxis: [{ gridIndex: 0, show: false, max: 1 }, { ...Ymoney, gridIndex: 1 }],
+      legend: { ...LEG, data: ['תזרים מפעילות שוטפת', 'תזרים מהשקעות', 'תזרים ממימון'] },
+      tooltip: { ...TIP, axisPointer: { type: 'shadow', shadowStyle: { color: 'rgba(20,33,61,.04)' } },
+        formatter: (ps) => {
+          const i = ps[0].dataIndex, stg = A.series.stage[i];
+          const head = `${qLong(d[i])}${stg && stg !== 'unknown' ? ` – <span style="color:${A.stages[stg].color}">${A.stages[stg].he}</span>` : ''}`;
+          return tipRows(head, ps.filter((p) => p.seriesIndex > 0).map((p) => [p.color, p.seriesName, moneyPlain(p.value) || '—']));
+        } },
+      series: [
+        { type: 'bar', xAxisIndex: 0, yAxisIndex: 0, barWidth: '100%', silent: true,
+          data: A.series.stage.map((x) => ({ value: x === 'unknown' ? 0 : 1, itemStyle: { color: x === 'unknown' ? 'transparent' : A.stages[x].color, opacity: 0.85 } })) },
+        { type: 'bar', name: 'תזרים מפעילות שוטפת', xAxisIndex: 1, yAxisIndex: 1, data: s.ocf_ttm, itemStyle: { color: PAL.green, borderRadius: [2, 2, 0, 0] }, barMaxWidth: 10, barGap: '15%' },
+        { type: 'bar', name: 'תזרים מהשקעות', xAxisIndex: 1, yAxisIndex: 1, data: s.cfi_ttm, itemStyle: { color: PAL.blue, borderRadius: [2, 2, 0, 0] }, barMaxWidth: 10 },
+        { type: 'bar', name: 'תזרים ממימון', xAxisIndex: 1, yAxisIndex: 1, data: s.cff_ttm, itemStyle: { color: PAL.orange, borderRadius: [2, 2, 0, 0] }, barMaxWidth: 10 },
+      ],
     });
-    baseChart($('#cRev')).setOption(common({ series: [
-      { type: 'bar', name: `הכנסות (${per})`, data: s.revenue_q, itemStyle: { color: '#B8C7DC' } },
-      { type: 'line', name: '12 חודשים', data: s.revenue_ttm, showSymbol: false, lineStyle: { color: C.ink, width: 2.2 }, itemStyle: { color: C.ink } },
-    ] }));
-    baseChart($('#cNi')).setOption(common({ series: [
-      { type: 'bar', name: `רווח נקי (${per})`, data: s.net_income_q.map((v) => ({ value: v, itemStyle: { color: (v ?? 0) >= 0 ? C.green : C.red } })) },
-      { type: 'line', name: 'רווח 12 ח\'', data: s.net_income_ttm, showSymbol: false, lineStyle: { color: C.ink, width: 2.2 }, itemStyle: { color: C.ink } },
-      { type: 'line', name: 'תזרים חופשי 12 ח\'', data: s.fcf_ttm, showSymbol: false, lineStyle: { color: '#0E7490', type: 'dashed' }, itemStyle: { color: '#0E7490' } },
-    ] }));
-    const cashSeries = [
-      { type: 'line', name: 'מזומן וני"ע', data: s.liquid, showSymbol: false, connectNulls: false, lineStyle: { color: C.green, width: 2.2 }, itemStyle: { color: C.green }, areaStyle: { color: 'rgba(26,147,111,.08)' } },
-    ];
-    if (!debtIsNegligible(A)) cashSeries.push({ type: 'line', name: 'חוב', data: s.debt, showSymbol: false, connectNulls: false, lineStyle: { color: C.red, width: 2.2 }, itemStyle: { color: C.red } });
-    baseChart($('#cCash')).setOption(common({ series: cashSeries }));
-    baseChart($('#cSh')).setOption(common({
-      tooltip: { ...tip, valueFormatter: (v) => (bad(v) ? '—' : Intl.NumberFormat('en-US', { notation: 'compact', maximumFractionDigits: 2 }).format(v)) },
-      yAxis: { type: 'value', scale: true, axisLabel: { color: C.muted, formatter: (v) => Intl.NumberFormat('en-US', { notation: 'compact' }).format(v) }, splitLine: { lineStyle: { color: C.grid } } },
-      series: [{ type: 'line', name: 'מניות', data: s.shares, showSymbol: false, connectNulls: true, lineStyle: { color: '#7C3AED', width: 2.2 }, itemStyle: { color: '#7C3AED' } }],
-    }));
+
+    // 2) הכנסות + צמיחה
+    baseChart($('#cRev')).setOption({
+      textStyle: { fontFamily: C.font }, animation: false, grid: { ...G, right: 46 }, legend: LEG,
+      tooltip: { ...TIP, axisPointer: { type: 'shadow', shadowStyle: { color: 'rgba(20,33,61,.04)' } },
+        formatter: (ps) => fmtTip(ps, (v, n2) => (n2.includes('%') ? pctTxt(v / 100) : moneyPlain(v))) },
+      xAxis: X,
+      yAxis: [Ymoney, { type: 'value', ...AX, splitLine: { show: false }, axisLabel: { ...AX.axisLabel, formatter: (v) => `${v}%` } }],
+      series: [
+        { type: 'bar', name: `הכנסות (${per})`, data: s.revenue_q, itemStyle: { color: PAL.slate, borderRadius: [2, 2, 0, 0] }, barMaxWidth: 14 },
+        { type: 'line', name: 'צמיחה שנתית %', yAxisIndex: 1, data: s.revenue_yoy.map((v) => (bad(v) ? null : +(v * 100).toFixed(1))),
+          showSymbol: false, smooth: 0.2, lineStyle: { color: PAL.ink, width: 2 }, itemStyle: { color: PAL.ink } },
+      ],
+    });
+
+    // 3) רווחיות
+    baseChart($('#cNi')).setOption({
+      textStyle: { fontFamily: C.font }, animation: false, grid: G, legend: LEG,
+      tooltip: { ...TIP, formatter: (ps) => fmtTip(ps, (v) => moneyPlain(v) || '—') },
+      xAxis: X, yAxis: Ymoney,
+      series: [
+        { type: 'line', name: 'רווח נקי', data: s.net_income_ttm, showSymbol: false, lineStyle: { color: PAL.ink, width: 2.2 }, itemStyle: { color: PAL.ink },
+          markLine: { silent: true, symbol: 'none', label: { show: false }, lineStyle: { color: PAL.slate, type: 'solid', width: 1 }, data: [{ yAxis: 0 }] } },
+        { type: 'line', name: 'רווח תפעולי', data: s.op_income_ttm, showSymbol: false, lineStyle: { color: PAL.blue, width: 1.6, type: 'dashed' }, itemStyle: { color: PAL.blue } },
+        { type: 'line', name: 'תזרים חופשי', data: s.fcf_ttm, showSymbol: false, lineStyle: { color: PAL.green, width: 1.6 }, itemStyle: { color: PAL.green } },
+      ],
+    });
+
+    // 4) מזומן מול חוב
+    const cashSeries = [{ type: 'line', name: 'מזומן וני"ע', data: s.liquid, showSymbol: false, lineStyle: { color: PAL.green, width: 2.2 }, itemStyle: { color: PAL.green },
+      areaStyle: { color: { type: 'linear', x: 0, y: 0, x2: 0, y2: 1, colorStops: [{ offset: 0, color: 'rgba(26,147,111,.18)' }, { offset: 1, color: 'rgba(26,147,111,0)' }] } } }];
+    if (!debtIsNegligible(A)) cashSeries.push({ type: 'line', name: 'חוב', data: s.debt, showSymbol: false, lineStyle: { color: PAL.red, width: 2 }, itemStyle: { color: PAL.red } });
+    baseChart($('#cCash')).setOption({ textStyle: { fontFamily: C.font }, animation: false, grid: G, legend: LEG,
+      tooltip: { ...TIP, formatter: (ps) => fmtTip(ps, (v) => moneyPlain(v) || '—') }, xAxis: X, yAxis: Ymoney, series: cashSeries });
+
+    // 5) מניות
+    const nf = (v) => (bad(v) ? '—' : Intl.NumberFormat('en-US', { notation: 'compact', maximumFractionDigits: 2 }).format(v));
+    baseChart($('#cSh')).setOption({ textStyle: { fontFamily: C.font }, animation: false, grid: G, legend: LEG,
+      tooltip: { ...TIP, formatter: (ps) => fmtTip(ps, nf) }, xAxis: X,
+      yAxis: { type: 'value', scale: true, ...AX, axisLabel: { ...AX.axisLabel, formatter: (v) => Intl.NumberFormat('en-US', { notation: 'compact' }).format(v) } },
+      series: [{ type: 'line', name: 'מניות', data: sh, showSymbol: false, step: 'end', lineStyle: { color: PAL.violet, width: 2 }, itemStyle: { color: PAL.violet } }] });
   }
 
   // ---------------- עדכונים ----------------
@@ -727,7 +897,32 @@
         <td><div class="flinks">${links || '<span class="muted">—</span>'}</div></td>
         <td class="tag">${r.concepts.map(esc).join('<br>')}</td></tr>`;
     }).join('');
-    $('#s-verify').innerHTML = `<h2>אמינות הנתונים</h2>
+    const signHe = (c) => (c === '+' ? '<span class="sign p">+</span>' : '<span class="sign m">−</span>');
+    const dtab = (A.dickinson_table || []).map((r) => `<tr${r.stage === A.stage && r.pattern === A.latest.pattern ? ' class="hl"' : ''}>
+      <td>${signHe(r.pattern[0])}</td><td>${signHe(r.pattern[1])}</td><td>${signHe(r.pattern[2])}</td>
+      <td><span style="color:${A.stages[r.stage].color};font-weight:600">${esc(r.he)}</span></td></tr>`).join('');
+    const drules = (A.damodaran_stages || []).map((r) => `<tr${A.damodaran && A.damodaran.code === r.code ? ' class="hl"' : ''}><td><b>${esc(r.he)}</b></td><td>${esc(r.rule)}</td></tr>`).join('');
+    const method = `<div class="card" style="margin-bottom:22px"><h3 class="h3">איך נקבע השלב</h3>
+      <div class="grid2 even" style="gap:28px">
+        <div>
+          <p><b>מודל Dickinson (2011).</b> מודל אקדמי שפורסם ב-The Accounting Review. השלב נקבע לפי הסימן של שלושת חלקי דוח תזרים המזומנים
+          ב-12 החודשים האחרונים, בלי ספים: 8 צירופים אפשריים, 5 שלבים. השורה המודגשת היא הצירוף של החברה.</p>
+          <div class="tablewrap"><table class="fin mtab"><thead><tr><th>פעילות שוטפת</th><th>השקעות</th><th>מימון</th><th>שלב</th></tr></thead><tbody>${dtab}</tbody></table></div>
+          <p class="note">התאמה שלנו: מתזרים ההשקעות מנוטרלות קנייה ומכירה של ניירות ערך סחירים (לפי השינוי ביתרתם במאזן), כי זה ניהול של הקופה ולא השקעה בעסק.
+          בלי הנטרול, חברות עם קופה גדולה "קופצות" לשלב התנערות בכל פעם שהן מוכרות אג"ח.</p>
+        </div>
+        <div>
+          <p><b>מחזור החיים של Damodaran.</b> שישה שלבים לפי צמיחה ורווחיות, וכל שלב מתמחרים אחרת – זה הבסיס לרעיון בסרטון.
+          Damodaran מתאר את השלבים במילים. הכללים כאן הם התרגום שלנו למספרים.</p>
+          <div class="tablewrap"><table class="fin mtab"><thead><tr><th>שלב</th><th>כלל</th></tr></thead><tbody>${drules}</tbody></table></div>
+          <p class="note"><b>שכבה נוספת מהסרטון:</b> "מעבר לרווח נקי" – הרבעון שבו הרווח הנקי השנתי הפך לחיובי, ומה קרה למניה מאז. רווח שנובע מסעיפים לא תפעוליים לא נספר.</p>
+        </div>
+      </div>
+      <div class="note" style="margin-top:10px">מקורות:
+        <a href="https://doi.org/10.2308/accr-10130" target="_blank" rel="noopener">Dickinson, V. (2011). Cash Flow Patterns as a Proxy for Firm Life Cycle. The Accounting Review</a>;
+        <a href="https://pages.stern.nyu.edu/~adamodar/pdfiles/blog/corporatelifecycle.pdf" target="_blank" rel="noopener">Damodaran, A. The Corporate Life Cycle</a>.</div>
+    </div>`;
+    $('#s-verify').innerHTML = `<h2>המודל ואמינות הנתונים</h2>${method}
       <div class="grid2">
         <div class="card"><h3 class="h3">בדיקות (${summary})</h3><ul class="checks">${checks}</ul></div>
         <div class="card"><h3 class="h3">איך זה עובד</h3>
