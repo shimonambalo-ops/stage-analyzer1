@@ -156,8 +156,9 @@ def compute_metrics(quarterly: pd.DataFrame, balance: pd.DataFrame, period_month
     elif "ocf_q" in m:
         m["fcf_q"] = m["ocf_q"]
     m["sbc_q"] = q.get("sbc")
+    m["op_income_q"] = q.get("op_income")
 
-    for col in ["revenue", "net_income", "ocf", "fcf", "sbc"]:
+    for col in ["revenue", "net_income", "op_income", "ocf", "fcf", "sbc"]:
         src = m.get(f"{col}_q")
         if src is None or not src.notna().any():
             m[f"{col}_ttm"] = np.nan
@@ -179,6 +180,11 @@ def compute_metrics(quarterly: pd.DataFrame, balance: pd.DataFrame, period_month
     m["revenue_yoy"] = rev_yoy
 
     m["net_margin_ttm"] = m["net_income_ttm"] / m["revenue_ttm"].where(m["revenue_ttm"] > 0)
+    # רווח נקי חיובי שנובע מרווח לא תפעולי (למשל שערוך כתבי אופציה או ריבית על הקופה) כשהפעילות עצמה מפסידה
+    # לא נחשב "מעבר לרווח". לסיווג משתמשים ברווח "ליבה": אם הרווח התפעולי שלילי – הוא קובע.
+    op = m["op_income_ttm"]
+    m["non_operating_profit"] = (m["net_income_ttm"] > 0) & (op < 0)
+    m["ni_core_ttm"] = m["net_income_ttm"].where(~m["non_operating_profit"], op)
 
     b = balance.copy().sort_index() if balance is not None else pd.DataFrame()
     for col in ["cash", "st_investments", "debt", "shares"]:
@@ -194,7 +200,7 @@ def compute_metrics(quarterly: pd.DataFrame, balance: pd.DataFrame, period_month
 # ---------------------------------------------------------------------------
 def classify_at(m: pd.DataFrame, i: int, cfg: Config) -> str:
     row = m.iloc[i]
-    rev, ni, g = row["revenue_ttm"], row["net_income_ttm"], row["revenue_yoy"]
+    rev, ni, g = row["revenue_ttm"], row["ni_core_ttm"], row["revenue_yoy"]
 
     if pd.isna(ni):
         return "unknown"
@@ -210,7 +216,7 @@ def classify_at(m: pd.DataFrame, i: int, cfg: Config) -> str:
 
     # מעבר לרווח נקי: TTM חיובי לראשונה אחרי לפחות 2 רבעוני TTM שליליים
     if ni > 0:
-        hist = m["net_income_ttm"].iloc[:i + 1].dropna()
+        hist = m["ni_core_ttm"].iloc[:i + 1].dropna()
         if len(hist) >= 3:
             pos = (hist > 0).values
             # הרבעון הראשון ברצף החיובי הנוכחי
@@ -266,7 +272,7 @@ def breakeven_estimate(m: pd.DataFrame, cfg: Config, period_months: int = 3) -> 
     r2 = 1 - ss_res / ss_tot if ss_tot > 0 else 0.0
     res.update(slope=float(slope), r2=float(r2))
 
-    ttm = m["net_income_ttm"].dropna()
+    ttm = m["ni_core_ttm"].dropna()
     if ttm.empty:
         return res
     if ttm.iloc[-1] > 0:
@@ -299,8 +305,10 @@ def breakeven_estimate(m: pd.DataFrame, cfg: Config, period_months: int = 3) -> 
 # ---------------------------------------------------------------------------
 # אירועי מעבר לרווח נקי + ביצועי המניה מאז
 # ---------------------------------------------------------------------------
-def inflection_events(m: pd.DataFrame, quarterly: pd.DataFrame, prices: pd.Series | None) -> pd.DataFrame:
-    ttm = m["net_income_ttm"]
+def inflection_events(m: pd.DataFrame, quarterly: pd.DataFrame, prices: pd.Series | None,
+                      min_revenue: float = 0.0) -> pd.DataFrame:
+    """מעבר לרווח נקי – רק כשהרווח נובע מהפעילות, ורק כשיש לחברה הכנסות משמעותיות (לא סטארטאפ)."""
+    ttm = m["ni_core_ttm"]
     rows = []
     vals = ttm.values
     for i in range(1, len(vals)):
@@ -309,6 +317,9 @@ def inflection_events(m: pd.DataFrame, quarterly: pd.DataFrame, prices: pd.Serie
         if vals[i] > 0 and vals[i - 1] <= 0:
             prior_neg = (ttm.iloc[:i].dropna() <= 0).sum()
             if prior_neg < 2:
+                continue
+            rev_i = m["revenue_ttm"].iloc[i]
+            if pd.isna(rev_i) or rev_i < min_revenue:
                 continue
             qend = ttm.index[i]
             filed = quarterly["filed"].get(qend) if "filed" in quarterly else None
@@ -434,6 +445,8 @@ def diagnose(data, cfg: Config | None = None) -> Diagnosis:
         "shares": shares_now, "dilution_yoy": dilution,
         "market_cap": mcap, "ps": ps, "pe": pe, "pfcf": pfcf, "volatility": vol,
         "last_price": data.last_price,
+        "non_operating_profit": bool(last.get("non_operating_profit", False)) if len(m) else False,
+        "op_income_ttm": last.get("op_income_ttm", np.nan),
     }
 
     # ---- ניקוד סיכון ----
@@ -503,6 +516,9 @@ def diagnose(data, cfg: Config | None = None) -> Diagnosis:
         elif ps > 10:
             add(3, f"מכפיל מכירות {ps:.0f}")
 
+    if latest["non_operating_profit"]:
+        add(8, "הרווח הנקי חיובי רק בזכות רווח לא תפעולי – הפעילות עצמה מפסידה")
+
     if not pd.isna(sbc_ratio) and sbc_ratio > 0.30:
         add(5, f"תגמול במניות = {sbc_ratio:.0%} מההכנסות (דילול סמוי)")
 
@@ -518,7 +534,7 @@ def diagnose(data, cfg: Config | None = None) -> Diagnosis:
         and be.get("months") is not None and 0 < be["months"] <= cfg.approaching_q * 3
     )
 
-    events = inflection_events(m, data.quarterly, data.prices)
+    events = inflection_events(m, data.quarterly, data.prices, cfg.startup_rev)
     if pm == 12 and len(events) and "filed" not in data.quarterly:
         events["event_date"] = events["quarter_end"] + pd.Timedelta(days=100)
 

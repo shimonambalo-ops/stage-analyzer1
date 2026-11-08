@@ -22,7 +22,7 @@ def fiscal_quarters(start_year, n_years):
     return out
 
 
-def make_facts(rev_q, ni_q, ocf_q, cash, shares, start_year=2019, debt=None, style_ytd_cf=True):
+def make_facts(rev_q, ni_q, ocf_q, cash, shares, start_year=2019, debt=None, style_ytd_cf=True, op_q=None):
     """
     בונה JSON בפורמט companyfacts:
     הכנסות ורווח – דיווח רבעוני ל-Q1-Q3 + שנתי בלבד ל-Q4 (כמו ב-10-K).
@@ -56,6 +56,8 @@ def make_facts(rev_q, ni_q, ocf_q, cash, shares, start_year=2019, debt=None, sty
         "NetCashProvidedByUsedInOperatingActivities": {"units": {"USD": flow(ocf_q, ytd_only=style_ytd_cf)}},
         "CashAndCashEquivalentsAtCarryingValue": {"units": {"USD": instant(cash)}},
     }
+    if op_q is not None:
+        gaap["OperatingIncomeLoss"] = {"units": {"USD": flow(op_q)}}
     if debt is not None:
         gaap["LongTermDebt"] = {"units": {"USD": instant(debt)}}
     return {
@@ -152,6 +154,21 @@ def test_loss_slow_and_dilution():
         print(f"    +{pts}: {r}")
 
 
+def test_non_operating_profit_is_not_inflection():
+    """סטארטאפ שהרווח הנקי שלו חיובי רק משערוך כתבי אופציה – לא 'מעבר לרווח'."""
+    n = 16
+    ni = [-50e6] * 6 + [80e6] * 4 + [-60e6] * 6      # רווח חשבונאי זמני
+    op = [-55e6] * n                                  # הפעילות מפסידה כל הזמן
+    f = make_facts([0] * n, ni, [-50e6] * n, [1e9] * n, [100e6] * n, op_q=op)
+    d = sec_data.build_company_data(f, "T", "T", 1)
+    idx = pd.bdate_range("2019-01-01", "2023-03-01")
+    d.prices = pd.Series(np.linspace(10, 20, len(idx)), index=idx)
+    dg = analysis.diagnose(d)
+    assert len(dg.events) == 0, dg.events
+    assert set(dg.history.values) <= {"startup", "unknown"}, set(dg.history.values)
+    print("✓ non-operating profit ignored (no false 'profit' event)")
+
+
 if __name__ == "__main__":
     test_quarter_reconstruction()
     test_startup()
@@ -160,4 +177,5 @@ if __name__ == "__main__":
     test_inflection_and_events()
     test_value()
     test_loss_slow_and_dilution()
+    test_non_operating_profit_is_not_inflection()
     print("\nכל הבדיקות עברו")

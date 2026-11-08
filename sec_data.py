@@ -42,6 +42,10 @@ CONCEPTS: dict[str, list[tuple[str, str]]] = {
         ("ifrs-full", "ProfitLossAttributableToOwnersOfParent"),
         ("ifrs-full", "ProfitLoss"),
     ],
+    "op_income": [
+        ("us-gaap", "OperatingIncomeLoss"),
+        ("ifrs-full", "ProfitLossFromOperatingActivities"),
+    ],
     "ocf": [
         ("us-gaap", "NetCashProvidedByUsedInOperatingActivities"),
         ("us-gaap", "NetCashProvidedByUsedInOperatingActivitiesContinuingOperations"),
@@ -107,7 +111,7 @@ CONCEPTS: dict[str, list[tuple[str, str]]] = {
     ],
 }
 
-FLOW_ITEMS = ["revenue", "net_income", "ocf", "capex", "sbc"]
+FLOW_ITEMS = ["revenue", "net_income", "op_income", "ocf", "capex", "sbc"]
 INSTANT_ITEMS = ["cash", "st_investments", "debt_total", "debt_noncurrent", "debt_current", "shares"]
 
 
