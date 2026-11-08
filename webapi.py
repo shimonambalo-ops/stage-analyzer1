@@ -16,6 +16,7 @@ import analysis
 import news_data
 import profile_data
 import sec_data
+import stage_engine
 import verify
 
 UA = os.environ.get("SEC_USER_AGENT") or sec_data.DEFAULT_UA
@@ -132,6 +133,12 @@ def analyze(ticker: str) -> dict:
 
     cfg = analysis.Config()
     dg = analysis.diagnose(data, cfg)
+    sub = _cached(("sub", info["cik"]), 6 * 3600, lambda: profile_data.fetch_submissions(info["cik"], UA)) or {}
+    try:
+        engine = stage_engine.evaluate(data, dg.latest, sic=sub.get("sic"), market_cap=mcap if data.currency == "USD" else None)
+    except Exception as e:  # המנוע לא יפיל את כל העמוד
+        engine = {"suitable": True, "stage": None, "reason": f"שגיאה בחישוב מנוע השלבים: {e}"}
+    engine["sic"], engine["sic_he"] = sub.get("sic"), sub.get("sicDescription")
     m = dg.metrics
 
     change_1d = None
@@ -182,6 +189,7 @@ def analyze(ticker: str) -> dict:
         "damodaran": ({"code": dg.damodaran, **analysis.DAMODARAN[dg.damodaran]} if dg.damodaran else None),
         "damodaran_stages": [{"code": k, "he": v["he"], "rule": v["rule"]} for k, v in analysis.DAMODARAN.items()],
         "dickinson_table": [{"pattern": "".join(k), "stage": v, "he": analysis.STAGES[v]["he"]} for k, v in analysis.DICKINSON.items()],
+        "engine": engine,
         "concepts": data.concepts_used,
         "checks": verify.checks(data, dg),
         "sources": verify.sources(data, dg),
