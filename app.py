@@ -37,6 +37,11 @@ def _api(path, q):
         return (webapi.analyze(t) if t else {"error": "חסר טיקר"}), 6 * 3600
     if path == "/api/extras":
         return (webapi.extras(t, int(q.get("cik") or 0), q.get("name", "")) if t else {"error": "חסר טיקר"}), 1800
+    if path == "/api/engine":  # תוצאת מנוע השלבים בלבד (לבדיקות וכיול)
+        if not t:
+            return {"error": "חסר טיקר"}, 600
+        r = webapi.analyze(t)
+        return {"ticker": t, "name": r.get("name"), "engine": r.get("engine"), "error": r.get("error")}, 600
     if path == "/api/tickers":
         return {"tickers": webapi.tickers_list()}, 86400
     return {"error": "נתיב לא קיים"}, 600
