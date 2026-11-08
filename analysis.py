@@ -187,11 +187,12 @@ def compute_metrics(quarterly: pd.DataFrame, balance: pd.DataFrame, period_month
     m["ni_core_ttm"] = m["net_income_ttm"].where(~m["non_operating_profit"], op)
 
     b = balance.copy().sort_index() if balance is not None else pd.DataFrame()
-    # נתון מאזני נלקח רק מהתקופה עצמה (או מהקודמת לה) – לא ממשיכים להציג ערך ישן שלא דווח שוב
-    max_age = 100 if period_months == 3 else 380
+    # נתון מאזני נלקח רק מהמאזן של אותה תקופה – לא ממשיכים להציג ערך ישן שלא דווח שוב
+    # (מספר מניות מגיע מעמוד השער, שמתוארך כמה שבועות אחרי סוף התקופה – לכן חלון רחב יותר)
     for col in ["cash", "st_investments", "securities_total", "lt_securities", "debt", "shares"]:
         series = b[col] if col in b else None
-        m[col] = [_asof(series, t, max_age_days=max_age if col != "shares" else max_age + 100) for t in m.index]
+        age = 20 if col != "shares" else (200 if period_months == 3 else 420)
+        m[col] = [_asof(series, t, max_age_days=age) for t in m.index]
     # קופה = מזומן + ניירות ערך סחירים. אם יש סה"כ ניירות ערך (שוטף + לא שוטף) – לוקחים את הגדול מבין החישובים
     by_parts = m["cash"].fillna(0) + m["st_investments"].fillna(0) + m["lt_securities"].fillna(0)
     by_total = m["cash"].fillna(0) + m["securities_total"].fillna(0)

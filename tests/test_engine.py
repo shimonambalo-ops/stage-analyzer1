@@ -182,7 +182,7 @@ def test_spac_shell_filings_are_dropped_and_securities_counted():
         if row["filed"] <= "2022-05-12":
             row["val"] = abs(row["val"])  # "רווח" מריבית על הנאמנות
     gaap["DebtSecuritiesAvailableForSaleExcludingAccruedInterest"] = {"units": {"USD": [
-        {"end": "2024-09-30", "val": 700e6, "filed": "2024-11-10", "form": "10-Q", "accn": "x"}]}}
+        {"end": "2024-12-31", "val": 700e6, "filed": "2025-02-10", "form": "10-K", "accn": "x"}]}}
     d = sec_data.build_company_data(f, "T", "T", 1)
     assert d.spac_cutoff == pd.Timestamp("2022-05-12")
     assert d.quarterly.index.min() > pd.Timestamp("2022-03-31"), d.quarterly.index.min()
