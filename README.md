@@ -16,7 +16,7 @@
 ## העלאה ל-Vercel (חינם)
 1. נכנסים ל-vercel.com, לוחצים **Sign Up** ומתחברים עם GitHub.
 2. לוחצים **Add New…** ← **Project** ← בוחרים את המאגר `stage-analyzer1` ← **Import**.
-3. ב-**Framework Preset** משאירים **Other**. לא משנים שום דבר בהגדרות הבנייה.
+3. ב-**Framework Preset** בוחרים **Python** (בדרך כלל Vercel מזהה את זה לבד). לא משנים שום דבר בהגדרות הבנייה.
 4. פותחים את **Environment Variables** ומוסיפים:
    - Name: `SEC_USER_AGENT`
    - Value: השם והמייל שלך, למשל `Shimon Ambalo your@email.com`
@@ -28,9 +28,7 @@
 | קובץ | תפקיד |
 |---|---|
 | `public/` | האתר עצמו: `index.html`, `styles.css`, `app.js`, ו-ECharts לגרפים |
-| `api/analyze.py` | אבחון: דוחות SEC, מחירים, שלב, סיכון, "על הסף" |
-| `api/extras.py` | פרופיל, מועד הדוח הבא, נתוני מסחר, אנליסטים, חדשות ודיווחים ל-SEC |
-| `api/tickers.py` | רשימת הטיקרים להשלמה אוטומטית בחיפוש |
+| `app.py` | נקודת הכניסה: מגיש את האתר ואת ה-API (`/api/analyze`, `/api/extras`, `/api/tickers`). הרצה מקומית: `python app.py` |
 | `webapi.py` | הלוגיקה של ה-API |
 | `analysis.py` | מנוע האבחון, הסיכון, הציונים וזיהוי "על הסף" |
 | `sec_data.py` | משיכת הדוחות מ-SEC ופירוקם לסדרות רבעוניות |
