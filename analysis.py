@@ -529,3 +529,131 @@ def diagnose(data, cfg: Config | None = None) -> Diagnosis:
         risk_reasons=reasons, positives=positives, events=events,
         explain=STAGE_EXPLAIN[stage], watch=STAGE_WATCH[stage],
     )
+
+
+# ---------------------------------------------------------------------------
+# ציונים 1–10 (בסגנון כרטיסי דירוג) + תמונת מצב במילים
+# ---------------------------------------------------------------------------
+def _bucket(x, edges, scores):
+    """edges עולים; מחזיר את הציון של הטווח שבו x נמצא."""
+    for e, s in zip(edges, scores):
+        if x < e:
+            return s
+    return scores[-1]
+
+
+def scorecards(dg: "Diagnosis") -> dict:
+    L = dg.latest
+    out = {}
+
+    g = L.get("revenue_yoy")
+    if g is not None and not pd.isna(g):
+        out["growth"] = 10 if np.isinf(g) else _bucket(g, [-0.10, 0, 0.05, 0.10, 0.20, 0.30, 0.50], [1, 2, 3, 5, 6, 7, 8, 10])
+
+    nm = L.get("net_margin_ttm")
+    if nm is not None and not pd.isna(nm):
+        s = _bucket(nm, [-0.5, -0.2, -0.05, 0, 0.05, 0.10, 0.20], [1, 2, 3, 4, 5, 6, 8, 10])
+        fcf = L.get("fcf_ttm")
+        if fcf is not None and not pd.isna(fcf) and fcf > 0 and s < 10:
+            s += 1
+        out["profitability"] = s
+    elif L.get("net_income_ttm") is not None and not pd.isna(L.get("net_income_ttm")):
+        out["profitability"] = 1 if L["net_income_ttm"] < 0 else 6
+
+    # חוסן פיננסי: קופה, חוב, דילול
+    rw = dg.runway
+    if rw["self_funded"]:
+        s = 8
+    elif rw["months_fcf"] is not None:
+        s = _bucket(rw["months_fcf"], [12, 24, 36, 60], [2, 4, 5, 6, 7])
+    else:
+        s = 5
+    liquid, debt = L.get("liquid"), L.get("debt")
+    if liquid is not None and not pd.isna(liquid):
+        if debt is None or pd.isna(debt) or debt <= liquid:
+            s += 1
+        elif debt > 2 * liquid:
+            s -= 2
+        else:
+            s -= 1
+    dil = L.get("dilution_yoy")
+    if dil is not None and not pd.isna(dil):
+        if dil > 0.15:
+            s -= 2
+        elif dil > 0.05:
+            s -= 1
+        elif dil < -0.02:
+            s += 1
+    out["strength"] = int(max(1, min(10, s)))
+
+    # תמחור: ציון גבוה = זול יותר
+    pe, ps = L.get("pe"), L.get("ps")
+    if pe is not None and not pd.isna(pe):
+        out["valuation"] = _bucket(pe, [12, 18, 25, 35, 50, 80], [10, 8, 7, 5, 4, 3, 2])
+    elif ps is not None and not pd.isna(ps):
+        out["valuation"] = _bucket(ps, [1, 2, 4, 8, 15, 30], [8, 7, 6, 4, 3, 2, 1])
+    return out
+
+
+def _m(x):
+    if x is None or pd.isna(x):
+        return None
+    a, sign = abs(x), ("-" if x < 0 else "")
+    if a >= 1e9:
+        return f"{sign}${a/1e9:.1f} מיליארד"
+    if a >= 1e6:
+        return f"{sign}${a/1e6:.0f} מיליון"
+    return f"{sign}${a:,.0f}"
+
+
+def status_narrative(dg: "Diagnosis", name: str) -> list[str]:
+    """תמונת מצב כללית בעברית, משפט לכל נושא."""
+    L = dg.latest
+    out = []
+    out.append(f"{name} נמצאת בשלב \"{dg.stage_he}\" במסלול האבולוציה של חברה.")
+
+    rev, g, ni = L.get("revenue_ttm"), L.get("revenue_yoy"), L.get("net_income_ttm")
+    if rev is not None and not pd.isna(rev) and rev > 0:
+        s = f"ב-12 החודשים האחרונים הכניסה {_m(rev)}"
+        if g is not None and not pd.isna(g):
+            s += " – לראשונה הכנסות משמעותיות" if np.isinf(g) else (f", צמיחה של {g:.0%} לעומת שנה קודם" if g >= 0 else f", ירידה של {-g:.0%} לעומת שנה קודם")
+        if ni is not None and not pd.isna(ni):
+            s += f", ו{'הרוויחה' if ni > 0 else 'הפסידה'} {_m(abs(ni))}."
+        out.append(s if s.endswith(".") else s + ".")
+    elif ni is not None and not pd.isna(ni):
+        out.append(f"אין לה עדיין הכנסות משמעותיות, וב-12 החודשים האחרונים הפסידה {_m(abs(ni))}.")
+
+    rw = dg.runway
+    if rw["self_funded"]:
+        out.append("התזרים החופשי חיובי – החברה מממנת את הפעילות בעצמה ולא תלויה בגיוסים.")
+    elif rw["months_fcf"] is not None:
+        mth = rw["months_fcf"]
+        out.append(
+            f"בקצב השריפה הנוכחי הקופה ({_m(L.get('liquid'))}) מספיקה לכ-{mth:.0f} חודשים"
+            + (" – צפוי גיוס הון בטווח הקרוב." if mth < 18 else ".")
+        )
+
+    be = dg.breakeven
+    if dg.stage in ("growth_loss", "startup_to_growth", "loss_slow"):
+        if be.get("trend") == "narrowing" and be.get("months"):
+            out.append(f"ההפסדים מצטמצמים; לפי המגמה, רווח נקי שנתי צפוי בעוד כ-{be['months']} חודשים.")
+        elif be.get("trend") == "widening":
+            out.append("ההפסדים מתרחבים – עדיין אין מגמה ברורה לכיוון רווח.")
+
+    dil = L.get("dilution_yoy")
+    if dil is not None and not pd.isna(dil):
+        if dil > 0.08:
+            out.append(f"מספר המניות גדל ב-{dil:.0%} בשנה האחרונה – דילול משמעותי לבעלי המניות.")
+        elif dil < -0.02:
+            out.append(f"החברה רוכשת מניות בחזרה: מספר המניות ירד ב-{-dil:.0%} בשנה.")
+
+    if len(dg.events):
+        ev = dg.events.iloc[-1]
+        when = pd.Timestamp(ev["event_date"]).strftime("%m/%Y")
+        s = f"החברה עברה לרווח נקי בדוח שפורסם ב-{when}"
+        if "return_since" in ev and not pd.isna(ev.get("return_since")):
+            s += f"; מאז המניה {'עלתה' if ev['return_since'] >= 0 else 'ירדה'} {abs(ev['return_since']):.0%}"
+        out.append(s + ".")
+
+    out.append(f"רמת הסיכון ביחס לשלב: {dg.risk_level} ({dg.risk_score}/100).")
+    return out
