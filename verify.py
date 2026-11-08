@@ -145,6 +145,12 @@ def checks(data, dg) -> list[dict]:
                           f"דוחות שהוגשו עד {pd.Timestamp(data.spac_cutoff).strftime('%m/%Y')} שייכים לחברת המעטפת ולא נכללו."))
     if pm == 12:
         out.append(_check("annual_only", "דוחות שנתיים בלבד", "info", "החברה לא מגישה דוחות רבעוניים, ולכן האבחון מבוסס על נתונים שנתיים."))
+    ni, op = L.get("net_income_ttm"), L.get("op_income_ttm")
+    if ni is not None and op is not None and not pd.isna(ni) and not pd.isna(op) and op > 0 and ni > 1.3 * op:
+        out.append(_check("ni_inflated", "רווח נקי גבוה מהרווח התפעולי", "info",
+                          f"הרווח הנקי ב-12 החודשים ({_fmt(ni)}) גבוה ב-{ni / op - 1:.0%} מהרווח התפעולי ({_fmt(op)}). "
+                          "בדרך כלל זה רווח חד-פעמי משערוך השקעות או ממכירת נכס – המספר נכון, אבל לא משקף את הפעילות. "
+                          "מכפיל הרווח נראה נמוך יותר בגלל זה."))
     if L.get("non_operating_profit"):
         out.append(_check("nonop", "רווח לא תפעולי", "warn",
                           "הרווח הנקי חיובי, אבל הרווח התפעולי שלילי. לצורך האבחון הכלי מתייחס לחברה כהפסדית."))

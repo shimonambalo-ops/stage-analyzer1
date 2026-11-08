@@ -316,13 +316,8 @@ def _instant_series(df: pd.DataFrame, sum_classes: bool = False) -> pd.DataFrame
     return d
 
 
-def _best_concept(facts: dict, item: str, kind: str):
-    """
-    בוחר את המושג עם הנתון העדכני ביותר. כשכמה מושגים עדכניים באותה מידה – לפי סדר העדיפות ברשימה
-    (למשל "מזומן" לפני "מזומן כולל מזומן מוגבל"). היסטוריה חסרה משלימים ב-_merge_concepts.
-    """
-    best = None
-    best_key = None
+def _candidates(facts: dict, item: str, kind: str):
+    out = []
     for prio, (ns, concept) in enumerate(CONCEPTS[item]):
         df, unit = _facts_df(facts, ns, concept)
         if df.empty:
@@ -330,36 +325,50 @@ def _best_concept(facts: dict, item: str, kind: str):
         s = _series(df, kind, sum_classes=(ns == "dei"))
         if s.empty:
             continue
-        # תאריך עדכני (בדיוק של חודש, כדי שהבדלי ימים לא יכריעו) ואז עדיפות ברשימה
-        key = (s.index.max().to_period("M"), -prio)
-        if best_key is None or key > best_key:
-            best, best_key = (s, unit, f"{ns}:{concept}"), key
-    return best
+        out.append((s, unit, f"{ns}:{concept}", prio))
+    return out
+
+
+def _best_concept(facts: dict, item: str, kind: str, cands=None):
+    """
+    בוחר את מושג הבסיס: (1) הכי עדכני, (2) עם הכי הרבה תקופות בשלוש השנים האחרונות,
+    (3) לפי סדר העדיפות ברשימה (למשל "מזומן" לפני "מזומן כולל מזומן מוגבל").
+    """
+    cands = cands if cands is not None else _candidates(facts, item, kind)
+    if not cands:
+        return None
+    latest = max(c[0].index.max() for c in cands)
+    horizon = latest - pd.Timedelta(days=1100)
+
+    def key(c):
+        s, _, _, prio = c
+        return (s.index.max().to_period("M"), int((s.index >= horizon).sum()), -prio)
+
+    s, unit, name, _ = max(cands, key=key)
+    return s, unit, name
 
 
 def _merge_concepts(facts: dict, item: str, kind: str):
     """
-    משלב כמה מושגים: המושג העדכני ביותר הוא הבסיס, ומושגים אחרים משלימים
-    רבעונים היסטוריים שחסרים בו (חברות מחליפות מושג XBRL לאורך השנים).
+    משלב כמה מושגים: מושג הבסיס קובע, ומושגים אחרים (באותה יחידה) ממלאים כל תקופה שחסרה בו –
+    חברות מחליפות שדה XBRL לאורך השנים ולפעמים חוזרות לשדה הישן (למשל Alphabet בהכנסות).
     """
-    base = _best_concept(facts, item, kind)
+    cands = _candidates(facts, item, kind)
+    base = _best_concept(facts, item, kind, cands)
     if base is None:
         return None
     series, unit, used = base
-    for ns, concept in CONCEPTS[item]:
-        name = f"{ns}:{concept}"
-        if name == used:
-            continue
-        df, u = _facts_df(facts, ns, concept)
-        if df.empty or u != unit:
-            continue
-        s = _series(df, kind, sum_classes=(ns == "dei"))
-        if s.empty:
+    for s, u, name, _ in sorted(cands, key=lambda c: c[3]):
+        if name == used or u != unit:
             continue
         missing = s.index.difference(series.index)
-        missing = missing[missing < series.index.min()]  # רק היסטוריה מוקדמת יותר
-        if len(missing):
-            series = pd.concat([series, s.loc[missing]]).sort_index()
+        if not len(missing):
+            continue
+        # לא להוסיף תקופה שכבר קיימת בתאריך קרוב (הבדל של ימים בין דוחות)
+        have = series.index
+        keep = [d for d in missing if not ((have >= d - pd.Timedelta(days=20)) & (have <= d + pd.Timedelta(days=20))).any()]
+        if keep:
+            series = pd.concat([series, s.loc[keep]]).sort_index()
     return series, unit, used
 
 
