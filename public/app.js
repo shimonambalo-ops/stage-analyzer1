@@ -846,7 +846,7 @@
     if (!bad(L.pe) && !bad(S.trailingPE) && S.trailingPE > 0) {
       const d = Math.abs(L.pe - S.trailingPE) / Math.max(L.pe, S.trailingPE);
       rows.push({ id: 'x-pe', title: 'מכפיל רווח: תואם ל-Yahoo Finance', status: d <= 0.05 ? 'ok' : d <= 0.15 ? 'warn' : 'info',
-        detail: `אצלנו: ${num(L.pe)}, Yahoo: ${num(S.trailingPE)} (פער ${(d * 100).toFixed(1)}%). הבדל קטן נובע ממועד המחיר וממועד הדוח האחרון.` });
+        detail: `אצלנו: ${plain(num(L.pe))}, Yahoo: ${plain(num(S.trailingPE))} (פער ${(d * 100).toFixed(1)}%). הבדל קטן נובע ממועד המחיר וממועד הדוח האחרון.` });
     }
     const ourCash = (L.cash || 0) + (L.st_investments || 0);
     if (ourCash) cmp('מזומן והשקעות קצרות', ourCash, S.totalCash, 0.10, 0.25, ' Yahoo לא כולל ניירות ערך לטווח ארוך.');
