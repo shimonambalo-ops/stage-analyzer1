@@ -157,12 +157,19 @@
     t = t.trim().toUpperCase();
     $('#q').value = t;
     $('#suggest').hidden = true;
-    history.pushState({ t }, '', `/?t=${encodeURIComponent(t)}`);
+    history.pushState({ t }, '', `/${encodeURIComponent(t)}`);
     route();
   }
 
+  function currentTicker() {
+    const legacy = new URLSearchParams(location.search).get('t');  // קישורים ישנים בסגנון ?t=PLTR
+    if (legacy) { history.replaceState({}, '', `/${encodeURIComponent(legacy.toUpperCase())}`); return legacy; }
+    const p = decodeURIComponent(location.pathname.replace(/^\/+|\/+$/g, ''));
+    return /^[A-Za-z0-9.\-]{1,10}$/.test(p) ? p : null;
+  }
+
   function route() {
-    const t = new URLSearchParams(location.search).get('t');
+    const t = currentTicker();
     if (!t) {
       $('#home').hidden = false; $('#view').hidden = true;
       document.title = 'מסלול – אבחון שלב חברה';
@@ -594,6 +601,11 @@
   // ---------------- ניווט פנימי ----------------
   function initSubnav() {
     const links = [...document.querySelectorAll('.subnav a')];
+    links.forEach((a) => {
+      if (a.dataset.bound) return;
+      a.dataset.bound = '1';
+      a.addEventListener('click', (e) => { e.preventDefault(); $(a.getAttribute('href')).scrollIntoView({ behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth' }); });
+    });
     const obs = new IntersectionObserver((ents) => {
       ents.forEach((e) => { if (e.isIntersecting) links.forEach((a) => a.classList.toggle('on', a.getAttribute('href') === '#' + e.target.id)); });
     }, { rootMargin: '-40% 0px -55% 0px' });
