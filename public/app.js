@@ -91,6 +91,7 @@
   const cls = (x) => (bad(x) ? '' : x >= 0 ? 'pos' : 'neg');
   const num = (x, d = 1) => (bad(x) ? '—' : n(x.toLocaleString('en-US', { maximumFractionDigits: d, minimumFractionDigits: d })));
   const big = (x) => (bad(x) ? '—' : n(Intl.NumberFormat('en-US', { notation: 'compact', maximumFractionDigits: 1 }).format(x)));
+  const bigx = (x) => (bad(x) ? '—' : n(Intl.NumberFormat('en-US', { notation: 'compact', maximumFractionDigits: 2 }).format(x)));
   const months = (x) => (bad(x) ? '—' : x >= 120 ? '10+ שנים' : `${n(Math.round(x))} חודשים`);
   function dmy(iso) {
     if (!iso) return '—';
@@ -572,7 +573,7 @@
       kv('בטא', ys(num(S.beta, 2)), 'beta', loading ? '' : verdict('beta', S.beta)),
       kv('תנודתיות שנתית', pct(L.volatility, false), 'vol', verdict('vol', L.volatility)),
       kv('מחזור יומי ממוצע', ys(big(S.averageVolume)), 'avgvol'),
-      kv('מניות במחזור', big(L.shares), 'shares'),
+      kv('מניות במחזור', bigx(L.shares), 'shares'),
       kv('דילול שנתי', pct(dil), 'dil', verdict('dil', dil)),
       kv('שורט מהמניות הצפות', ys(pct(S.shortPercentOfFloat, false)), 'short', loading ? '' : verdict('short', S.shortPercentOfFloat)),
       kv('החזקת מוסדיים', ys(pct(S.heldPercentInstitutions, false)), 'inst'),
@@ -637,7 +638,7 @@
       ${row('תזרים חופשי', (r) => money(r.fcf, A.currency))}
       ${row('מזומן וני"ע', (r) => money(r.liquid, A.currency))}
       ${row('חוב פיננסי', (r) => money(r.debt, A.currency))}
-      ${row('מניות', (r) => big(r.shares))}
+      ${row('מניות', (r) => bigx(r.shares))}
     </tbody></table></div>` : '<p class="muted">אין מספיק נתונים לטבלה.</p>';
 
     const L = A.latest, s = A.series, d = s.dates;
@@ -665,9 +666,9 @@
             ${kpi(money(netCash, A.currency), bad(netCash) ? '' : (netCash >= 0 ? 'מזומן נטו' : 'חוב נטו'), cls(netCash))}</div>
           ${debtNote(A)}<div class="chart sm" id="cCash"></div></div>
         <div class="fcard"><div class="fhead"><div><h3>מספר מניות</h3><div class="fsub">גידול = דילול. ${L.dilution_basis === 'avg' ? 'הדילול לפי הממוצע המדולל (לרווח למניה)' : 'לפי עמוד השער של הדוח'}</div></div>
-            ${kpi(big(last(sh)), bad(L.dilution_yoy) ? '' : `דילול ${pct(L.dilution_yoy)} בשנה`, bad(L.dilution_yoy) ? '' : L.dilution_yoy > 0.01 ? 'neg' : L.dilution_yoy < -0.01 ? 'pos' : '')}</div>
+            ${kpi(bigx(last(sh)), bad(L.dilution_yoy) ? '' : `דילול ${pct(L.dilution_yoy)} בשנה`, bad(L.dilution_yoy) ? '' : L.dilution_yoy > 0.01 ? 'neg' : L.dilution_yoy < -0.01 ? 'pos' : '')}</div>
           ${L.dilution_basis === 'avg' && !bad(L.cover_shares_yoy) && Math.abs(L.cover_shares_yoy - L.dilution_yoy) > 0.05
-            ? `<div class="note">בעמוד השער של הדוח מספר המניות גדל ב-${pct(L.cover_shares_yoy)} בשנה. הפער מגיע ממניות שהונפקו אבל עוד לא נכנסות לחישוב הרווח למניה – בדרך כלל מניות חסומות שעוד לא הבשילו.</div>` : ''}
+            ? `<div class="note">בעמוד השער של הדוח מספר המניות גדל ב-${pct(L.cover_shares_yoy, false)} בשנה. הפער מגיע ממניות שהונפקו אבל עוד לא נכנסות לחישוב הרווח למניה – בדרך כלל מניות חסומות שעוד לא הבשילו.</div>` : ''}
           <div class="chart sm" id="cSh"></div></div>
       </div>`;
 

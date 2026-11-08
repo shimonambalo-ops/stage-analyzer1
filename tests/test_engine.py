@@ -233,3 +233,26 @@ def test_dilution_uses_average_diluted_shares():
     assert L["dilution_basis"] == "avg", L
     assert abs(L["dilution_yoy"]) < 0.02, L["dilution_yoy"]
     assert L["cover_shares_yoy"] > 0.2
+
+
+def test_split_adjusts_share_history():
+    s = pd.Series([1.0e9, 1.01e9, 1.02e9, 3.07e9, 3.08e9],
+                  index=pd.to_datetime(["2022-03-31", "2022-06-30", "2022-09-30", "2022-12-31", "2023-03-31"]))
+    a = analysis._split_adjusted(s)
+    assert abs(a.iloc[0] - 3.0e9) < 1e6 and abs(a.iloc[-1] - 3.08e9) < 1
+    # הנפקה של 50% אינה פיצול
+    s2 = pd.Series([1.0e9, 1.5e9], index=pd.to_datetime(["2022-03-31", "2022-06-30"]))
+    assert analysis._split_adjusted(s2).iloc[0] == 1.0e9
+
+
+def test_securities_total_that_includes_cash_is_not_double_counted():
+    """טסלה: AvailableForSaleSecuritiesDebtSecurities = מזומן + השקעות קצרות – לא להוסיף שוב את המזומן."""
+    n = 8
+    f = make_facts([1e9] * n, [1e8] * n, [1e8] * n, [18e9] * n, [3e9] * n)
+    qs = fiscal_quarters(2019, n // 4)
+    inst = lambda vals: [{"end": e.isoformat(), "val": v, "filed": (e + timedelta(days=40)).isoformat(), "form": "10-Q"}
+                         for (y, qi, a, e), v in zip(qs, vals)]
+    f["facts"]["us-gaap"]["ShortTermInvestments"] = {"units": {"USD": inst([23e9] * n)}}
+    f["facts"]["us-gaap"]["AvailableForSaleSecuritiesDebtSecurities"] = {"units": {"USD": inst([41e9] * n)}}
+    d, dg = run(f)
+    assert abs(dg.latest["liquid"] - 41e9) < 1e6, dg.latest["liquid"]

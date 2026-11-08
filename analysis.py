@@ -127,6 +127,25 @@ def _value_year_ago(s: pd.Series, when: pd.Timestamp, tol_days: int = 25):
     return s.iloc[k] if diffs[k] <= tol_days else np.nan
 
 
+def _split_adjusted(s: pd.Series) -> pd.Series:
+    """
+    מתאים את מספר המניות לפיצולים: קפיצה בין שתי תקופות סמוכות ביחס כמעט שלם (פי 2, 3, 4, 10, 20...)
+    היא פיצול ולא הנפקה. כל הערכים שלפני הפיצול מוכפלים ביחס, כדי שהגרף והדילול יהיו בני השוואה.
+    """
+    s = pd.Series(s, dtype=float).copy()
+    v = s.dropna()
+    for i in range(len(v) - 1, 0, -1):
+        prev, cur = v.iloc[i - 1], v.iloc[i]
+        if prev <= 0 or pd.isna(prev):
+            continue
+        r = cur / prev
+        k = round(r)
+        if 2 <= k <= 50 and abs(r - k) / k < 0.03:
+            s.loc[s.index < v.index[i]] *= k
+            v = s.dropna()
+    return s
+
+
 def _asof(s: pd.Series | None, when: pd.Timestamp, slack_days: int = 15, max_age_days: int = 200):
     """הערך המאזני האחרון עד התאריך – רק אם הוא לא ישן מדי."""
     if s is None:
@@ -197,10 +216,18 @@ def compute_metrics(quarterly: pd.DataFrame, balance: pd.DataFrame, period_month
     for col in ["cash", "st_investments", "securities_total", "lt_securities", "debt", "shares"]:
         series = b[col] if col in b else None
         age = 20 if col != "shares" else (200 if period_months == 3 else 420)
-        m[col] = [_asof(series, t, max_age_days=age) for t in m.index]
+        # מספר המניות מעמוד השער מתוארך 3–6 שבועות אחרי סוף התקופה, ולכן נספר לתקופה שעליה הדוח מדווח
+        m[col] = [_asof(series, t, slack_days=15 if col != "shares" else 60, max_age_days=age) for t in m.index]
+    for col in ["shares", "shares_avg"]:
+        if col in m:
+            m[col] = _split_adjusted(m[col])
     # קופה = מזומן + ניירות ערך סחירים. אם יש סה"כ ניירות ערך (שוטף + לא שוטף) – לוקחים את הגדול מבין החישובים
     by_parts = m["cash"].fillna(0) + m["st_investments"].fillna(0) + m["lt_securities"].fillna(0)
     by_total = m["cash"].fillna(0) + m["securities_total"].fillna(0)
+    # יש חברות (למשל טסלה) שבהן "סך ניירות הערך" כבר כולל את שווי המזומנים – ואז הוספת המזומן סופרת אותו פעמיים
+    st_parts = m["cash"].fillna(0) + m["st_investments"].fillna(0)
+    incl_cash = (m["securities_total"] - st_parts).abs() <= 0.02 * m["securities_total"].abs()
+    by_total = by_total.where(~incl_cash.fillna(False), m["securities_total"])
     m["liquid"] = np.maximum(by_parts, by_total)
     m.loc[m[["cash", "st_investments", "securities_total", "lt_securities"]].isna().all(axis=1), "liquid"] = np.nan
     return m
