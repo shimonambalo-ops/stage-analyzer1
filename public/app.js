@@ -336,9 +336,14 @@
       ['תזרים ממימון', L.cff_ttm, 'cff'],
     ].map(([lbl, v, k]) => {
       const sg = bad(v) ? '' : v > 0 ? '+' : '−';
+      const pi = { cfo: 0, cfi: 1, cff: 2 }[k];
+      const ps = (L.pattern || '')[pi];
+      const shown = ps ? (ps === '+' ? '+' : '−') : sg;
       return `<div class="cf"><div class="cf-l">${lbl}${tipBtn(k)}</div><div class="cf-v">${money(v, A.currency)}</div>
-        <span class="sign ${bad(v) ? '' : v > 0 ? 'p' : 'm'}">${sg}</span></div>`;
+        <span class="sign ${ps ? (ps === '+' ? 'p' : 'm') : (bad(v) ? '' : v > 0 ? 'p' : 'm')}">${shown}</span></div>`;
     }).join('');
+    const nzNames = { cfi_ttm: 'תזרים ההשקעות', cff_ttm: 'תזרים המימון' };
+    const nz = (L.near_zero || []).length ? `<div class="note">${(L.near_zero || []).map((k) => nzNames[k]).join(' ו')} קרוב לאפס (פחות מ-3% מהתזרים הגדול), ולכן נחשב "אין פעילות" ולא כסימן.</div>` : '';
     const adj = !bad(L.sec_change_12m) && Math.abs(L.sec_change_12m) > 0 && !bad(L.cfi_raw_ttm)
       ? `<div class="note">תזרים ההשקעות מנוטרל מקנייה ומכירה של ניירות ערך סחירים (ניהול הקופה). לפני הנטרול: ${plain(money(L.cfi_raw_ttm, A.currency))}.</div>` : '';
 
@@ -397,7 +402,7 @@
           <div><div class="kicker">שלב במחזור החיים לפי Dickinson (2011)${tipBtn('dickinson')}</div>
           <h2 style="color:${color}">${esc(A.stage_he)}</h2></div>${dvir}</div>
         ${trackHTML(A.stage, color, A.edges)}
-        <div class="cfrow">${cf}</div>${adj}
+        <div class="cfrow">${cf}</div>${adj}${nz}
         <p class="lead" style="margin:12px 0 0">${esc(A.explain)}</p>
         ${edges ? `<div class="edges">${edges}</div>` : ''}
         ${damo}
@@ -908,8 +913,8 @@
           <p><b>מודל Dickinson (2011).</b> מודל אקדמי שפורסם ב-The Accounting Review. השלב נקבע לפי הסימן של שלושת חלקי דוח תזרים המזומנים
           ב-12 החודשים האחרונים, בלי ספים: 8 צירופים אפשריים, 5 שלבים. השורה המודגשת היא הצירוף של החברה.</p>
           <div class="tablewrap"><table class="fin mtab"><thead><tr><th>פעילות שוטפת</th><th>השקעות</th><th>מימון</th><th>שלב</th></tr></thead><tbody>${dtab}</tbody></table></div>
-          <p class="note">התאמה שלנו: מתזרים ההשקעות מנוטרלות קנייה ומכירה של ניירות ערך סחירים (לפי השינוי ביתרתם במאזן), כי זה ניהול של הקופה ולא השקעה בעסק.
-          בלי הנטרול, חברות עם קופה גדולה "קופצות" לשלב התנערות בכל פעם שהן מוכרות אג"ח.</p>
+          <p class="note">שתי התאמות שלנו: (1) מתזרים ההשקעות מנוטרלות קנייה ומכירה של ניירות ערך סחירים (לפי השינוי ביתרתם במאזן), כי זה ניהול של הקופה ולא השקעה בעסק.
+          (2) תזרים השקעות או מימון שקטן מ-3% מהתזרים הגדול נחשב "אין פעילות" (−), כי סימן של מספר זניח הוא רעש.</p>
         </div>
         <div>
           <p><b>מחזור החיים של Damodaran.</b> שישה שלבים לפי צמיחה ורווחיות, וכל שלב מתמחרים אחרת – זה הבסיס לרעיון בסרטון.

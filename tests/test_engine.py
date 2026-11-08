@@ -110,6 +110,16 @@ def test_dickinson_patterns():
     print("✓ all 8 Dickinson cash-flow patterns map to the right stage")
 
 
+def test_materiality():
+    """תזרים השקעות ומימון זניחים (כמו Palantir) לא הופכים חברה ל'התנערות'."""
+    dg = _stage(4000e6, 20e6, 9e6)  # + + + גולמי, אבל השניים האחרונים זניחים
+    assert dg.stage == "mature", dg.stage
+    assert set(dg.latest["near_zero"]) == {"cfi_ttm", "cff_ttm"}
+    dg = _stage(4000e6, 900e6, -500e6)  # מכירת נכסים מהותית – נשאר התנערות
+    assert dg.stage == "shakeout", dg.stage
+    print("✓ materiality: near-zero investing/financing flows treated as no activity")
+
+
 def test_damodaran_lens():
     n = 12
     # הכנסות זניחות → סטארטאפ
@@ -223,6 +233,7 @@ def test_spac_shell_filings_are_dropped_and_securities_counted():
 if __name__ == "__main__":
     test_quarter_reconstruction()
     test_dickinson_patterns()
+    test_materiality()
     test_damodaran_lens()
     test_securities_trading_neutralized()
     test_edge_signal()

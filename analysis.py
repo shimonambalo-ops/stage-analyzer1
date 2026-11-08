@@ -264,12 +264,30 @@ def _sign(x):
     return "+" if x > 0 else "-"
 
 
+MATERIALITY = 0.03  # רכיב קטן מ-3% מהתזרים הגדול מבין השלושה נחשב "אפס"
+
+
+def near_zero_components(row) -> list[str]:
+    vals = {"ocf_ttm": row.get("ocf_ttm"), "cfi_ttm": row.get("cfi_ttm"), "cff_ttm": row.get("cff_ttm")}
+    if any(v is None or pd.isna(v) for v in vals.values()):
+        return []
+    scale = max(abs(v) for v in vals.values())
+    return [k for k in ("cfi_ttm", "cff_ttm") if scale > 0 and abs(vals[k]) < MATERIALITY * scale]
+
+
 def cash_flow_pattern(row) -> tuple | None:
-    """הסימנים של (פעילות שוטפת, השקעות, מימון) ב-12 החודשים האחרונים."""
+    """
+    הסימנים של (פעילות שוטפת, השקעות, מימון) ב-12 החודשים האחרונים.
+    רכיב השקעות או מימון שקרוב לאפס (פחות מ-3% מהתזרים הגדול) הוא רעש ולא פעילות:
+    השקעות ≈ 0 → לא מוכרת נכסים ("−"); מימון ≈ 0 → לא מגייסת ("−").
+    """
     vals = [row.get("ocf_ttm"), row.get("cfi_ttm"), row.get("cff_ttm")]
     if any(v is None or pd.isna(v) for v in vals):
         return None
-    return tuple(_sign(v) for v in vals)
+    pat = [_sign(v) for v in vals]
+    for k in near_zero_components(row):
+        pat[{"cfi_ttm": 1, "cff_ttm": 2}[k]] = "-"
+    return tuple(pat)
 
 
 def classify_at(m: pd.DataFrame, i: int, cfg: Config) -> str:
@@ -476,6 +494,7 @@ def diagnose(data, cfg: Config | None = None) -> Diagnosis:
         "ocf_ttm": last.get("ocf_ttm", np.nan), "cfi_ttm": last.get("cfi_ttm", np.nan), "cff_ttm": last.get("cff_ttm", np.nan),
         "cfi_raw_ttm": last.get("cfi_raw_ttm", np.nan), "sec_change_12m": last.get("sec_change_12m", np.nan),
         "pattern": "".join(cash_flow_pattern(last)) if len(m) and cash_flow_pattern(last) else None,
+        "near_zero": near_zero_components(last) if len(m) else [],
         "op_income_ttm": last.get("op_income_ttm", np.nan),
     }
 
